@@ -14,22 +14,34 @@ local script_path = source:sub(1, 1) == "@" and source:sub(2) or source
 local script_dir = script_path:match("^(.*[\\/])") or ("." .. separator)
 local json = dofile(script_dir .. "vendor" .. separator .. "json.lua")
 
-local function configured_ipc_root()
+local function load_bridge_config()
   local config_path = script_dir .. "bridge_config.local.json"
   local stream = io.open(config_path, "rb")
   if not stream then
-    return reaper.GetResourcePath() .. separator .. "PampaPilot" .. separator .. "ipc"
+    return {
+      ipc_root = reaper.GetResourcePath() .. separator .. "PampaPilot" .. separator .. "ipc",
+      allowed_media_roots = {},
+    }
   end
   local content = stream:read("*a")
   stream:close()
   local config = json.decode(content)
-  if type(config) ~= "table" or type(config.ipc_root) ~= "string" or config.ipc_root == "" then
+  if type(config) ~= "table" then error("bridge_config.local.json debe ser un objeto") end
+  if type(config.ipc_root) ~= "string" or config.ipc_root == "" then
     error("bridge_config.local.json no contiene ipc_root válido")
   end
-  return config.ipc_root
+  if config.allowed_media_roots ~= nil and type(config.allowed_media_roots) ~= "table" then
+    error("allowed_media_roots debe ser un arreglo")
+  end
+  return {
+    ipc_root = config.ipc_root,
+    allowed_media_roots = config.allowed_media_roots or {},
+  }
 end
 
-local ipc_root = configured_ipc_root()
+local bridge_config = load_bridge_config()
+local ipc_root = bridge_config.ipc_root
+local allowed_media_roots = bridge_config.allowed_media_roots
 local pending_dir = ipc_root .. separator .. "requests" .. separator .. "pending"
 local processing_dir = ipc_root .. separator .. "requests" .. separator .. "processing"
 local responses_dir = ipc_root .. separator .. "responses"
@@ -111,6 +123,41 @@ local function require_number(value, name, minimum, maximum)
   return value
 end
 
+local function normalized_absolute_path(value, name)
+  local path = require_string(value, name, 4096)
+  local absolute = separator == "\\" and path:match("^%a:[\\/]") or path:sub(1, 1) == "/"
+  if not absolute then error(name .. " debe ser una ruta absoluta") end
+  for segment in path:gmatch("[^\\/]+") do
+    if segment == ".." then error(name .. " no puede contener segmentos ..") end
+  end
+  local normalized = path:gsub("[\\/]", separator)
+  while #normalized > 3 and normalized:sub(-1) == separator do
+    normalized = normalized:sub(1, -2)
+  end
+  if separator == "\\" then normalized = normalized:lower() end
+  return normalized
+end
+
+local function require_allowed_audio_path(value)
+  local path = require_string(value, "file_path", 4096)
+  if path:lower():sub(-4) ~= ".wav" then error("el MVP sólo permite archivos WAV") end
+  local candidate = normalized_absolute_path(path, "file_path")
+  local allowed = false
+  for _, root_value in ipairs(allowed_media_roots) do
+    local root = normalized_absolute_path(root_value, "allowed_media_roots")
+    local prefix = root .. separator
+    if candidate:sub(1, #prefix) == prefix then
+      allowed = true
+      break
+    end
+  end
+  if not allowed then error("file_path está fuera de allowed_media_roots") end
+  local stream = io.open(path, "rb")
+  if not stream then error("no se puede leer el archivo WAV") end
+  stream:close()
+  return path
+end
+
 local function require_project(params)
   if type(params) ~= "table" then error("params debe ser un objeto") end
   local project, path, ref = project_context()
@@ -145,6 +192,30 @@ local function read_track(track, index)
     muted = reaper.GetMediaTrackInfo_Value(track, "B_MUTE") ~= 0,
     solo = reaper.GetMediaTrackInfo_Value(track, "I_SOLO"),
     fx_count = reaper.TrackFX_GetCount(track),
+  }
+end
+
+local function read_imported_item(item, take)
+  local item_ok, item_guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+  local take_ok, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+  if not item_ok or item_guid == "" then error("REAPER no devolvió GUID del ítem") end
+  if not take_ok or take_guid == "" then error("REAPER no devolvió GUID de la toma") end
+  local source = reaper.GetMediaItemTake_Source(take)
+  if not source then error("la toma no tiene fuente de audio") end
+  local source_length, length_is_qn = reaper.GetMediaSourceLength(source)
+  return {
+    guid = item_guid,
+    position_seconds = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+    length_seconds = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+    take = {
+      guid = take_guid,
+      source_path = reaper.GetMediaSourceFileName(source),
+      source_type = reaper.GetMediaSourceType(source),
+      source_length = source_length,
+      source_length_is_quarter_notes = length_is_qn == true,
+      sample_rate = reaper.GetMediaSourceSampleRate(source),
+      channels = reaper.GetMediaSourceNumChannels(source),
+    },
   }
 end
 
@@ -252,6 +323,64 @@ function ACTIONS.set_track_pan(params, request_id)
       error("la lectura posterior del paneo no coincide")
     end
     return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.import_audio(params, request_id)
+  local project, _, ref = require_project(params)
+  local file_path = require_allowed_audio_path(params.file_path)
+  local track_name = require_string(params.track_name, "track_name", 128)
+  local position = params.position_seconds == nil
+    and 0.0 or require_number(params.position_seconds, "position_seconds", 0.0)
+  local index = reaper.CountTracks(project)
+  local result = run_transaction(project, request_id, "importar audio", function()
+    reaper.InsertTrackInProject(project, index, 0)
+    local track = reaper.GetTrack(project, index)
+    if not track then error("REAPER no devolvió la pista para importar") end
+    if not reaper.GetSetMediaTrackInfo_String(track, "P_NAME", track_name, true) then
+      error("REAPER rechazó el nombre de la pista")
+    end
+    local item = reaper.AddMediaItemToTrack(track)
+    if not item then error("REAPER no pudo crear el ítem") end
+    local take = reaper.AddTakeToMediaItem(item)
+    if not take then error("REAPER no pudo crear la toma") end
+    local source = reaper.PCM_Source_CreateFromFile(file_path)
+    if not source then error("REAPER no pudo abrir el WAV") end
+    local source_length, length_is_qn = reaper.GetMediaSourceLength(source)
+    if length_is_qn or source_length <= 0 then
+      reaper.PCM_Source_Destroy(source)
+      error("la fuente WAV no informó una duración válida en segundos")
+    end
+    if not reaper.SetMediaItemTake_Source(take, source) then
+      reaper.PCM_Source_Destroy(source)
+      error("REAPER no pudo asignar la fuente a la toma")
+    end
+    if not reaper.SetMediaItemPosition(item, position, false) then
+      error("REAPER rechazó la posición del ítem")
+    end
+    if not reaper.SetMediaItemLength(item, source_length, false) then
+      error("REAPER rechazó la duración del ítem")
+    end
+    local track_state = read_track(track, index)
+    local item_state = read_imported_item(item, take)
+    if track_state.name ~= track_name then error("el nombre leído de la pista no coincide") end
+    if normalized_absolute_path(item_state.take.source_path, "source_path")
+      ~= normalized_absolute_path(file_path, "file_path") then
+      error("la ruta leída de la fuente no coincide")
+    end
+    if math.abs(item_state.position_seconds - position) > 0.000001 then
+      error("la posición leída del ítem no coincide")
+    end
+    if math.abs(item_state.length_seconds - source_length) > 0.000001 then
+      error("la duración leída del ítem no coincide")
+    end
+    return {
+      project_ref = ref,
+      track = track_state,
+      item = item_state,
+      transaction_request_id = request_id,
+    }
   end)
   return result, observations(true)
 end
@@ -384,5 +513,4 @@ reaper.atexit(function()
     reaper.DeleteExtState(SECTION, INSTANCE_KEY, false)
   end
 end)
-reaper.ShowConsoleMsg("PampaPilot Bridge " .. BRIDGE_VERSION .. " iniciado.\n")
 loop()

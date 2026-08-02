@@ -106,6 +106,34 @@ def set_track_pan(
 
 
 @mcp.tool(
+    title="Importar audio en una pista nueva",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def import_audio(
+    project_ref: str,
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    track_name: Annotated[str, Field(min_length=1, max_length=128)],
+    position_seconds: Annotated[float, Field(ge=0.0)] = 0.0,
+) -> dict[str, Any]:
+    """Importa un WAV permitido, verifica pista/ítem/toma y devuelve sus GUID."""
+
+    return _call(
+        "import_audio",
+        {
+            "project_ref": project_ref,
+            "file_path": file_path,
+            "track_name": track_name,
+            "position_seconds": position_seconds,
+        },
+    )
+
+
+@mcp.tool(
     title="Deshacer transacción propia",
     annotations=ToolAnnotations(
         read_only_hint=False,

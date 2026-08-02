@@ -52,3 +52,7 @@ No imprime nada mientras espera un cliente MCP; ese silencio es normal.
 Para conectarlo a Codex, copie `.codex/config.toml.example` como
 `.codex/config.toml`, reemplace las rutas absolutas y reinicie Codex. El archivo
 real es local y no se versiona.
+
+El puente de REAPER usa además `reaper/bridge_config.local.json`, copiado desde
+`reaper/bridge_config.example.json`. Sólo permite importar medios ubicados bajo
+`allowed_media_roots`; los stems locales de `media/` están excluidos de Git.

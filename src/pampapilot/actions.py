@@ -55,6 +55,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Ajusta paneo con comprobación de modo, ley y automatización.",
         ),
         ActionSpec(
+            "import_audio",
+            True,
+            VerificationLevel.STATE,
+            "Importa un archivo permitido en una pista nueva y verifica el ítem.",
+        ),
+        ActionSpec(
             "add_stock_fx",
             True,
             VerificationLevel.STATE,
@@ -83,4 +89,3 @@ def require_action(name: str) -> ActionSpec:
         return ACTION_SPECS[name]
     except KeyError as exc:
         raise LookupError(f"acción no permitida: {name}") from exc
-
