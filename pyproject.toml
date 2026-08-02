@@ -19,6 +19,8 @@ analysis = [
     "numpy>=2,<3",
     "soundfile>=0.13,<1",
     "pyloudnorm>=0.1.1,<1",
+    "mido>=1.3,<2",
+    "librosa>=0.11,<1",
 ]
 dev = [
     "pytest>=8,<10",

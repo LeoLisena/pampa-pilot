@@ -1,0 +1,41 @@
+schema_version: 1
+id: conservative-midi-cleanup
+scope: aligned_instrument_midi_and_wav
+
+principles:
+  - preserve_inputs
+  - separate_safe_and_reconstructed_outputs
+  - require_audio_evidence_for_pitch_changes
+  - report_every_change
+  - never_auto_insert_missing_notes
+  - require_human_listening_for_perceptual_approval
+
+safe_repairs:
+  exact_duplicate:
+    action: remove
+    confidence: deterministic
+  same_pitch_short_overlap:
+    maximum_ticks: 2
+    action: trim_previous_note
+    confidence: deterministic
+
+pitch_correction:
+  requires:
+    - explicit_instrument_range
+    - alternative_energy_margin_db_at_least: 12
+    - alternative_energy_db_at_least: -55
+    - no_active_note_collision
+  collision_policy: propose_only
+
+quantization:
+  default_enabled: false
+  reason: preserve_timing_expression_and_avoid_note_collisions
+
+missing_notes:
+  automatic_insertion: false
+  reason: audio_onsets_may_be_articulations_harmonics_or_separation_artifacts
+
+outputs:
+  - clean-safe.mid
+  - reconstructed.mid
+  - cleanup-report.json

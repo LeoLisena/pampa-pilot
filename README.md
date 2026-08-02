@@ -42,6 +42,8 @@ valores se vuelven a leer dentro de una única transacción reversible.
 
 La arquitectura y sus límites están en [docs/architecture.md](docs/architecture.md).
 El primer recorrido verificable está en [docs/mvp.md](docs/mvp.md).
+La limpieza reutilizable de MIDI contra un stem está en
+[docs/midi-cleanup.md](docs/midi-cleanup.md).
 
 ## Entorno Python reproducible
 
@@ -103,3 +105,19 @@ trata como grabaciones crudas. Primero reconstruye y compara la suma; después
 busca artefactos de separación, duplicados, incompatibilidad mono o problemas
 audibles concretos. EQ, compresión y rebalanceo sólo se aplican con una razón
 verificable o una intención estética indicada por el usuario.
+
+## Limpieza MIDI offline
+
+El mismo motor admite cualquier par formado por un MIDI de interpretación y el
+WAV del instrumento correspondiente. En modo `generic` no fija BPM, rango ni
+instrumento. Los perfiles son optativos y todos los supuestos se pueden
+reemplazar mediante configuración:
+
+```powershell
+.\.venv-pampapilot\Scripts\python.exe .\scripts\clean_midi.py `
+  "C:\RUTA\instrumento.mid" "C:\RUTA\instrumento.wav" "C:\RUTA\salida"
+```
+
+El original se preserva y se generan una variante segura, otra reconstruida y
+un reporte JSON auditable. La cuantización y la incorporación automática de
+notas faltantes están desactivadas por defecto.
