@@ -21,10 +21,12 @@ verificó el recorrido crear pista -> leer GUID -> ajustar paneo -> volver a lee
 También se verificó en vivo la importación y lectura posterior de un WAV estéreo
 de 48 kHz, el cambio de 120 a 85 BPM sin alterar el audio y el guardado de la
 sesión con nombre propio. La primera sesión real contiene 12 stems importados y
-guardados; el lote completo es una única transacción reversible. El puente 0.2.0
+guardados; el lote completo es una única transacción reversible. El puente
 también aplica volumen, paneo y mute de varias pistas en una sola transacción. La
 primera mezcla estática real fue releída desde REAPER y su suma se verificó sin
-clipping antes de guardarla.
+clipping antes de guardarla. El puente 0.4.2 agrega ReaComp por GUID y lo configura
+en unidades musicales; cada valor se calibra contra lo que muestra el propio FX y
+se vuelve a leer dentro de una única transacción reversible.
 
 ## Decisiones iniciales
 

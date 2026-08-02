@@ -103,10 +103,10 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Agrega un efecto nativo permitido y devuelve su identidad.",
         ),
         ActionSpec(
-            "set_stock_fx_parameter",
+            "configure_reacomp",
             True,
             VerificationLevel.STATE,
-            "Ajusta un parámetro mediante un adaptador explícito.",
+            "Configura ReaComp en unidades musicales mediante un adaptador explícito.",
         ),
         ActionSpec(
             "undo_transaction",

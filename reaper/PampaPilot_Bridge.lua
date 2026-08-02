@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.2.0"
+local BRIDGE_VERSION = "0.4.2"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -234,6 +234,179 @@ local function read_track(track, index)
   }
 end
 
+local function read_fx(track, fx_index, include_parameters)
+  local name_ok, name = reaper.TrackFX_GetFXName(track, fx_index)
+  local guid = reaper.TrackFX_GetFXGUID(track, fx_index)
+  if not name_ok or not name or name == "" then error("REAPER no devolvió el nombre del FX") end
+  if not guid or guid == "" then error("REAPER no devolvió el GUID del FX") end
+  local state = {
+    index = fx_index,
+    guid = guid,
+    name = name,
+    enabled = reaper.TrackFX_GetEnabled(track, fx_index),
+    offline = reaper.TrackFX_GetOffline(track, fx_index),
+    parameter_count = reaper.TrackFX_GetNumParams(track, fx_index),
+  }
+  if include_parameters then
+    state.parameters = {}
+    for parameter_index = 0, state.parameter_count - 1 do
+      local _, parameter_name = reaper.TrackFX_GetParamName(track, fx_index, parameter_index)
+      local _, parameter_ident = reaper.TrackFX_GetParamIdent(track, fx_index, parameter_index)
+      local _, formatted = reaper.TrackFX_GetFormattedParamValue(
+        track, fx_index, parameter_index)
+      state.parameters[#state.parameters + 1] = {
+        index = parameter_index,
+        name = parameter_name or "",
+        ident = parameter_ident or "",
+        normalized = reaper.TrackFX_GetParamNormalized(track, fx_index, parameter_index),
+        formatted = formatted or "",
+      }
+    end
+  end
+  return state
+end
+
+local function read_fx_chain(track, include_parameters)
+  local chain = {}
+  for fx_index = 0, reaper.TrackFX_GetCount(track) - 1 do
+    chain[#chain + 1] = read_fx(track, fx_index, include_parameters)
+  end
+  return chain
+end
+
+local function find_fx_by_guid(track, guid)
+  require_string(guid, "fx_guid", 64)
+  for fx_index = 0, reaper.TrackFX_GetCount(track) - 1 do
+    if reaper.TrackFX_GetFXGUID(track, fx_index) == guid then return fx_index end
+  end
+  error("no existe un FX con el GUID indicado en la pista")
+end
+
+local function find_fx_parameter_by_ident(track, fx_index, ident)
+  for parameter_index = 0, reaper.TrackFX_GetNumParams(track, fx_index) - 1 do
+    local ok, observed_ident = reaper.TrackFX_GetParamIdent(
+      track, fx_index, parameter_index)
+    if ok and observed_ident == ident then return parameter_index end
+  end
+  error("ReaComp no expone el parámetro esperado: " .. ident)
+end
+
+local function parse_formatted_number(value)
+  if type(value) ~= "string" then return nil end
+  local normalized = value:gsub(",", ".")
+  -- Lua patterns no implementa el cuantificador '?' de las expresiones
+  -- regulares. Se prueban explícitamente signo y parte decimal opcionales.
+  local token = normalized:match("[+-]%d+%.%d+")
+    or normalized:match("[+-]%d+")
+    or normalized:match("%d+%.%d+")
+    or normalized:match("%d+")
+  return token and tonumber(token) or nil
+end
+
+local function observed_parameter_number(track, fx_index, parameter_index, normalized)
+  -- ReaComp no informa de forma consistente el rango mediante
+  -- TrackFX_FormatParamValueNormalized. Calibramos dentro de la transacción:
+  -- escribimos un valor normalizado y leemos lo que el propio FX muestra.
+  if not reaper.TrackFX_SetParamNormalized(
+      track, fx_index, parameter_index, normalized) then
+    error("REAPER rechazó un valor de calibración de ReaComp")
+  end
+  local ok, formatted = reaper.TrackFX_GetFormattedParamValue(
+    track, fx_index, parameter_index)
+  if not ok then error("REAPER no pudo leer un parámetro de ReaComp") end
+  return parse_formatted_number(formatted), formatted or ""
+end
+
+local function normalized_for_formatted_target(
+    track, fx_index, parameter_index, target, tolerance)
+  local low, high = 0.0, 1.0
+  local low_value = observed_parameter_number(track, fx_index, parameter_index, low)
+  local high_value = observed_parameter_number(track, fx_index, parameter_index, high)
+
+  -- Algunos extremos se muestran como -inf/inf. Buscamos el primer valor finito.
+  for step = 1, 1024 do
+    if low_value == nil then
+      low = step / 1024
+      low_value = observed_parameter_number(track, fx_index, parameter_index, low)
+    end
+    if high_value == nil then
+      high = 1.0 - step / 1024
+      high_value = observed_parameter_number(track, fx_index, parameter_index, high)
+    end
+    if low_value ~= nil and high_value ~= nil then break end
+  end
+  if low_value == nil or high_value == nil then
+    error("el parámetro de ReaComp no tiene un rango numérico observable")
+  end
+
+  local minimum = math.min(low_value, high_value)
+  local maximum = math.max(low_value, high_value)
+  if target < minimum - tolerance or target > maximum + tolerance then
+    error("el valor solicitado está fuera del rango observable de ReaComp")
+  end
+  local ascending = high_value >= low_value
+  local best_normalized, best_value = low, low_value
+  if math.abs(high_value - target) < math.abs(best_value - target) then
+    best_normalized, best_value = high, high_value
+  end
+
+  for _ = 1, 48 do
+    local middle = (low + high) / 2
+    local middle_value = observed_parameter_number(
+      track, fx_index, parameter_index, middle)
+    if middle_value == nil then
+      -- Sólo debería ocurrir pegado a un extremo infinito.
+      if middle < 0.5 then low = middle else high = middle end
+    else
+      if math.abs(middle_value - target) < math.abs(best_value - target) then
+        best_normalized, best_value = middle, middle_value
+      end
+      if ascending then
+        if middle_value < target then low = middle else high = middle end
+      else
+        if middle_value > target then low = middle else high = middle end
+      end
+    end
+  end
+  if math.abs(best_value - target) > tolerance then
+    error("ReaComp no puede representar el valor solicitado con precisión suficiente")
+  end
+  return best_normalized
+end
+
+local function set_reacomp_numeric_parameter(
+    track, fx_index, ident, target, tolerance)
+  local parameter_index = find_fx_parameter_by_ident(track, fx_index, ident)
+  local found, normalized_or_error = pcall(
+    normalized_for_formatted_target,
+    track, fx_index, parameter_index, target, tolerance)
+  if not found then error(ident .. ": " .. tostring(normalized_or_error)) end
+  local normalized = normalized_or_error
+  if not reaper.TrackFX_SetParamNormalized(
+      track, fx_index, parameter_index, normalized) then
+    error("REAPER rechazó el parámetro " .. ident)
+  end
+  local _, formatted = reaper.TrackFX_GetFormattedParamValue(
+    track, fx_index, parameter_index)
+  local observed = parse_formatted_number(formatted)
+  if observed == nil or math.abs(observed - target) > tolerance then
+    error("la lectura posterior no coincide para " .. ident)
+  end
+end
+
+local function set_reacomp_boolean_parameter(track, fx_index, ident, target)
+  local parameter_index = find_fx_parameter_by_ident(track, fx_index, ident)
+  local normalized = target and 1.0 or 0.0
+  if not reaper.TrackFX_SetParamNormalized(
+      track, fx_index, parameter_index, normalized) then
+    error("REAPER rechazó el parámetro " .. ident)
+  end
+  local observed = reaper.TrackFX_GetParamNormalized(track, fx_index, parameter_index)
+  if math.abs(observed - normalized) > 0.000001 then
+    error("la lectura posterior no coincide para " .. ident)
+  end
+end
+
 local function read_imported_item(item, take)
   local item_ok, item_guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
   local take_ok, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
@@ -400,7 +573,10 @@ end
 function ACTIONS.get_track_state(params, _)
   local project = require_project(params)
   local track, index = find_track_by_guid(project, params.track_guid)
-  return { track = read_track(track, index) }, observations(true)
+  return {
+    track = read_track(track, index),
+    fx = read_fx_chain(track, true),
+  }, observations(true)
 end
 
 function ACTIONS.create_track(params, request_id)
@@ -572,6 +748,81 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
     return {
       project_ref = ref,
       tracks = states,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.add_stock_fx(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local fx_type = require_string(params.fx_type, "fx_type", 32)
+  if fx_type ~= "reacomp" then error("el único FX permitido actualmente es reacomp") end
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(project, request_id, "agregar ReaComp", function()
+    local fx_index = reaper.TrackFX_AddByName(track, "ReaComp (Cockos)", false, -1)
+    if fx_index < 0 then error("REAPER no pudo agregar ReaComp") end
+    if reaper.TrackFX_GetCount(track) ~= before_count + 1 then
+      error("la cantidad de FX no aumentó exactamente en uno")
+    end
+    local fx = read_fx(track, fx_index, true)
+    if not fx.name:lower():find("reacomp", 1, true) then
+      error("el FX agregado no se identificó como ReaComp")
+    end
+    if not fx.enabled or fx.offline then error("ReaComp no quedó activo y online") end
+    local track_state = read_track(track, index)
+    if track_state.fx_count ~= before_count + 1 then
+      error("la lectura posterior de la pista no refleja el FX agregado")
+    end
+    return {
+      project_ref = ref,
+      track = track_state,
+      fx = fx,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_reacomp(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  local fx_before = read_fx(track, fx_index, false)
+  if not fx_before.name:lower():find("reacomp", 1, true) then
+    error("el FX indicado no es ReaComp")
+  end
+  if not fx_before.enabled or fx_before.offline then
+    error("ReaComp debe estar activo y online")
+  end
+
+  local threshold_db = require_number(params.threshold_db, "threshold_db", -60.0, 0.0)
+  local ratio = require_number(params.ratio, "ratio", 1.0, 10.0)
+  local attack_ms = require_number(params.attack_ms, "attack_ms", 0.0, 200.0)
+  local release_ms = require_number(params.release_ms, "release_ms", 5.0, 1000.0)
+  local knee_db = require_number(params.knee_db, "knee_db", 0.0, 12.0)
+  local rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 100.0)
+  local auto_makeup = require_boolean(params.auto_makeup, "auto_makeup")
+  local auto_release = require_boolean(params.auto_release, "auto_release")
+
+  local result = run_transaction(project, request_id, "configurar ReaComp", function()
+    set_reacomp_numeric_parameter(track, fx_index, "0:_Threshold", threshold_db, 0.11)
+    set_reacomp_numeric_parameter(track, fx_index, "1:_Ratio", ratio, 0.011)
+    set_reacomp_numeric_parameter(track, fx_index, "2:_Attack", attack_ms, 0.11)
+    set_reacomp_numeric_parameter(track, fx_index, "3:_Release", release_ms, 1.01)
+    set_reacomp_numeric_parameter(track, fx_index, "13:_RMS_size", rms_ms, 0.11)
+    set_reacomp_numeric_parameter(track, fx_index, "14:_Knee", knee_db, 0.11)
+    set_reacomp_boolean_parameter(
+      track, fx_index, "15:_Auto_Make_Up_Gain", auto_makeup)
+    set_reacomp_boolean_parameter(track, fx_index, "16:_Auto_Release", auto_release)
+
+    local fx = read_fx(track, fx_index, true)
+    if fx.guid ~= params.fx_guid then error("el GUID de ReaComp cambió") end
+    return {
+      project_ref = ref,
+      fx = fx,
       transaction_request_id = request_id,
     }
   end)

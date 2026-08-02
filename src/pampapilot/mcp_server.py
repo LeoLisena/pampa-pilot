@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -187,6 +187,70 @@ def apply_track_mix_batch(
         {
             "project_ref": project_ref,
             "items": [item.model_dump(exclude_none=True) for item in items],
+        },
+    )
+
+
+@mcp.tool(
+    title="Agregar efecto nativo permitido",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def add_stock_fx(
+    project_ref: str,
+    track_guid: str,
+    fx_type: Literal["reacomp"],
+) -> dict[str, Any]:
+    """Agrega ReaComp, verifica su identidad y devuelve sus parámetros observados."""
+
+    return _call(
+        "add_stock_fx",
+        {"project_ref": project_ref, "track_guid": track_guid, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Configurar compresor ReaComp",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_reacomp(
+    project_ref: str,
+    track_guid: str,
+    fx_guid: str,
+    threshold_db: Annotated[float, Field(ge=-60.0, le=0.0)],
+    ratio: Annotated[float, Field(ge=1.0, le=10.0)],
+    attack_ms: Annotated[float, Field(ge=0.0, le=200.0)],
+    release_ms: Annotated[float, Field(ge=5.0, le=1000.0)],
+    knee_db: Annotated[float, Field(ge=0.0, le=12.0)],
+    rms_ms: Annotated[float, Field(ge=0.0, le=100.0)] = 5.0,
+    auto_makeup: bool = False,
+    auto_release: bool = False,
+) -> dict[str, Any]:
+    """Configura un ReaComp identificado por GUID y verifica los valores mostrados."""
+
+    return _call(
+        "configure_reacomp",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "threshold_db": threshold_db,
+            "ratio": ratio,
+            "attack_ms": attack_ms,
+            "release_ms": release_ms,
+            "knee_db": knee_db,
+            "rms_ms": rms_ms,
+            "auto_makeup": auto_makeup,
+            "auto_release": auto_release,
         },
     )
 
