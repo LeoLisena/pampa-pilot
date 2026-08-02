@@ -100,6 +100,22 @@ class AudioAnalysis:
     onset_envelope: Any
 
 
+@dataclass(frozen=True, slots=True)
+class CleanupPlan:
+    parsed: ParsedMidi
+    config: CleanupConfig
+    profile: InstrumentProfile
+    minimum_pitch: int
+    maximum_pitch: int
+    tempo_events: tuple[tuple[int, int], ...]
+    analysis: AudioAnalysis
+    safe_notes: tuple[MidiNote, ...]
+    safe_changes: tuple[dict[str, Any], ...]
+    reconstructed_notes: tuple[MidiNote, ...]
+    reconstruction_changes: tuple[dict[str, Any], ...]
+    missing_note_proposals: tuple[dict[str, Any], ...]
+
+
 def parse_midi(path: Path) -> ParsedMidi:
     """Parse notes plus channel messages needed to retain performance data."""
     import mido
@@ -805,34 +821,75 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run_cleanup(
-    midi_path: Path,
-    audio_path: Path,
-    output_directory: Path,
-    *,
-    config: CleanupConfig | None = None,
-    bpm: float | None = None,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """Run the reusable pipeline and return its machine-readable report."""
+def analyze_midi_file(midi_path: Path) -> dict[str, Any]:
+    """Return a lightweight structural analysis without reading a WAV."""
+    midi_path = Path(midi_path)
+    if not midi_path.is_file():
+        raise FileNotFoundError(midi_path)
+    parsed = parse_midi(midi_path)
+    if not parsed.notes:
+        raise ValueError("the MIDI contains no complete note events")
+    converter = _tempo_converter(parsed.ticks_per_beat, parsed.tempo_events)
+    tempo_bpms = [_bpm_from_tempo(tempo) for _, tempo in parsed.tempo_events]
+    _, safe_changes = safe_cleanup(parsed)
+    return {
+        "schema_version": "0.2",
+        "mode": "analysis",
+        "input": {
+            "midi": str(midi_path.resolve()),
+            "midi_sha256": _sha256(midi_path),
+        },
+        "structure": {
+            "ticks_per_beat": parsed.ticks_per_beat,
+            "time_signature": list(parsed.time_signature),
+            "tempo_event_count": len(parsed.tempo_events),
+            "inferred_bpm": inferred_bpm(parsed),
+            "tempo_bpm_min": min(tempo_bpms, default=120.0),
+            "tempo_bpm_max": max(tempo_bpms, default=120.0),
+            "duration_seconds": converter(max(note.end_tick for note in parsed.notes)),
+            "unmatched_note_offs": parsed.unmatched_note_offs,
+            "hanging_note_ons": parsed.hanging_note_ons,
+            "preserved_channel_event_count": len(parsed.program_events)
+            + len(parsed.passthrough_events),
+            "ignored_meta_event_count": parsed.ignored_meta_event_count,
+            **summarize_notes(parsed.notes),
+        },
+        "safe_repair_preview": {
+            "change_count": len(safe_changes),
+            "change_counts": dict(Counter(change["kind"] for change in safe_changes)),
+            "changes": safe_changes,
+        },
+        "outputs_written": False,
+    }
+
+
+def _resolve_config(
+    config: CleanupConfig | None,
+    bpm: float | None,
+    profile: str | None,
+) -> CleanupConfig:
     if config is not None and (bpm is not None or profile is not None):
         raise ValueError("pass either config or bpm/profile compatibility arguments")
-    config = config or CleanupConfig(
-        bpm=bpm,
-        profile=profile or "generic",
-    )
+    return config or CleanupConfig(bpm=bpm, profile=profile or "generic")
+
+
+def _prepare_cleanup(
+    midi_path: Path,
+    audio_path: Path,
+    config: CleanupConfig,
+) -> CleanupPlan:
     midi_path = Path(midi_path)
     audio_path = Path(audio_path)
-    output_directory = Path(output_directory)
     if not midi_path.is_file():
         raise FileNotFoundError(midi_path)
     if not audio_path.is_file():
         raise FileNotFoundError(audio_path)
-
     parsed = parse_midi(midi_path)
     if not parsed.notes:
         raise ValueError("the MIDI contains no complete note events")
-    profile_definition, minimum_pitch, maximum_pitch = _profile_and_bounds(config, parsed)
+    profile_definition, minimum_pitch, maximum_pitch = _profile_and_bounds(
+        config, parsed
+    )
     tempos = output_tempo_events(parsed, config.bpm)
     safe_notes, safe_changes = safe_cleanup(parsed, target_bpm=config.bpm)
     analysis = analyze_audio_reference(
@@ -852,7 +909,7 @@ def run_cleanup(
         minimum_pitch=minimum_pitch,
         maximum_pitch=maximum_pitch,
     )
-    missing_note_proposals = (
+    proposals = (
         propose_missing_notes(
             reconstructed_notes,
             parsed,
@@ -864,24 +921,28 @@ def run_cleanup(
         if config.propose_missing_notes and profile_definition.pitched
         else []
     )
+    return CleanupPlan(
+        parsed=parsed,
+        config=config,
+        profile=profile_definition,
+        minimum_pitch=minimum_pitch,
+        maximum_pitch=maximum_pitch,
+        tempo_events=tempos,
+        analysis=analysis,
+        safe_notes=tuple(safe_notes),
+        safe_changes=tuple(safe_changes),
+        reconstructed_notes=tuple(reconstructed_notes),
+        reconstruction_changes=tuple(reconstruction_changes),
+        missing_note_proposals=tuple(proposals),
+    )
 
-    safe_path = output_directory / f"{midi_path.stem} - clean-safe.mid"
-    reconstructed_path = output_directory / f"{midi_path.stem} - reconstructed.mid"
-    report_path = output_directory / f"{midi_path.stem} - cleanup-report.json"
-    common_write = {
-        "ticks_per_beat": parsed.ticks_per_beat,
-        "bpm": config.bpm,
-        "tempo_events": tempos,
-        "time_signature": parsed.time_signature,
-        "track_name": parsed.track_name,
-        "program": parsed.program,
-        "program_events": parsed.program_events,
-        "passthrough_events": parsed.passthrough_events,
-    }
-    write_midi(safe_path, safe_notes, **common_write)
-    write_midi(reconstructed_path, reconstructed_notes, **common_write)
 
-    report = {
+def _base_cleanup_report(
+    plan: CleanupPlan, midi_path: Path, audio_path: Path
+) -> dict[str, Any]:
+    parsed = plan.parsed
+    analysis = plan.analysis
+    return {
         "schema_version": "0.2",
         "policy": "conservative_offline_midi_cleanup",
         "original_preserved": True,
@@ -892,11 +953,15 @@ def run_cleanup(
             "audio_sha256": _sha256(audio_path),
         },
         "settings": {
-            **asdict(config),
-            "resolved_profile": asdict(profile_definition),
-            "resolved_pitch_range": [minimum_pitch, maximum_pitch],
-            "effective_bpm": config.bpm if config.bpm is not None else inferred_bpm(parsed),
-            "tempo_mode": "fixed" if config.bpm is not None else "preserve",
+            **asdict(plan.config),
+            "resolved_profile": asdict(plan.profile),
+            "resolved_pitch_range": [plan.minimum_pitch, plan.maximum_pitch],
+            "effective_bpm": (
+                plan.config.bpm
+                if plan.config.bpm is not None
+                else inferred_bpm(parsed)
+            ),
+            "tempo_mode": "fixed" if plan.config.bpm is not None else "preserve",
             "automatic_missing_note_additions": False,
         },
         "source": {
@@ -905,7 +970,8 @@ def run_cleanup(
             "tempo_event_count": len(parsed.tempo_events),
             "unmatched_note_offs": parsed.unmatched_note_offs,
             "hanging_note_ons": parsed.hanging_note_ons,
-            "preserved_channel_event_count": len(parsed.program_events) + len(parsed.passthrough_events),
+            "preserved_channel_event_count": len(parsed.program_events)
+            + len(parsed.passthrough_events),
             "ignored_meta_event_count": parsed.ignored_meta_event_count,
             **summarize_notes(parsed.notes),
         },
@@ -917,26 +983,99 @@ def run_cleanup(
             "output_onset_alignment_score": analysis.output_onset_alignment_score,
         },
         "clean_safe": {
-            "path": str(safe_path.resolve()),
-            "sha256": _sha256(safe_path),
-            "summary": summarize_notes(safe_notes),
-            "changes": safe_changes,
+            "summary": summarize_notes(plan.safe_notes),
+            "change_count": len(plan.safe_changes),
+            "change_counts": dict(
+                Counter(change["kind"] for change in plan.safe_changes)
+            ),
+            "changes": list(plan.safe_changes),
         },
         "reconstructed": {
-            "path": str(reconstructed_path.resolve()),
-            "sha256": _sha256(reconstructed_path),
-            "summary": summarize_notes(reconstructed_notes),
-            "changes": reconstruction_changes,
-            "missing_note_proposals": missing_note_proposals,
+            "summary": summarize_notes(plan.reconstructed_notes),
+            "change_count": len(plan.reconstruction_changes),
+            "change_counts": dict(
+                Counter(change["kind"] for change in plan.reconstruction_changes)
+            ),
+            "changes": list(plan.reconstruction_changes),
+            "missing_note_proposals": list(plan.missing_note_proposals),
         },
         "limitations": [
             "Audio source separation can create false harmonics and onsets.",
             "Unmatched audio onsets are proposals and are never inserted automatically.",
-            "Unsupported MIDI meta events are counted but not copied to the generated files.",
+            "Unsupported MIDI meta events are counted but not copied to generated files.",
             "Perceptual approval still requires a later listening pass.",
         ],
-        "report_path": str(report_path.resolve()),
     }
+
+
+def preview_cleanup(
+    midi_path: Path,
+    audio_path: Path,
+    *,
+    config: CleanupConfig | None = None,
+    bpm: float | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Analyze all proposed changes without writing any output file."""
+    midi_path = Path(midi_path)
+    audio_path = Path(audio_path)
+    resolved = _resolve_config(config, bpm, profile)
+    plan = _prepare_cleanup(midi_path, audio_path, resolved)
+    report = _base_cleanup_report(plan, midi_path, audio_path)
+    report.update({"mode": "dry_run", "outputs_written": False})
+    return report
+
+
+def run_cleanup(
+    midi_path: Path,
+    audio_path: Path,
+    output_directory: Path,
+    *,
+    config: CleanupConfig | None = None,
+    bpm: float | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Run the reusable pipeline and return its machine-readable report."""
+    midi_path = Path(midi_path)
+    audio_path = Path(audio_path)
+    output_directory = Path(output_directory)
+    resolved = _resolve_config(config, bpm, profile)
+    plan = _prepare_cleanup(midi_path, audio_path, resolved)
+    parsed = plan.parsed
+
+    safe_path = output_directory / f"{midi_path.stem} - clean-safe.mid"
+    reconstructed_path = output_directory / f"{midi_path.stem} - reconstructed.mid"
+    report_path = output_directory / f"{midi_path.stem} - cleanup-report.json"
+    common_write = {
+        "ticks_per_beat": parsed.ticks_per_beat,
+        "bpm": resolved.bpm,
+        "tempo_events": plan.tempo_events,
+        "time_signature": parsed.time_signature,
+        "track_name": parsed.track_name,
+        "program": parsed.program,
+        "program_events": parsed.program_events,
+        "passthrough_events": parsed.passthrough_events,
+    }
+    write_midi(safe_path, plan.safe_notes, **common_write)
+    write_midi(reconstructed_path, plan.reconstructed_notes, **common_write)
+
+    report = _base_cleanup_report(plan, midi_path, audio_path)
+    report.update(
+        {
+            "mode": "execute",
+            "outputs_written": True,
+            "report_path": str(report_path.resolve()),
+        }
+    )
+    report["clean_safe"].update(
+        {"path": str(safe_path.resolve()), "sha256": _sha256(safe_path)}
+    )
+    report["reconstructed"].update(
+        {
+            "path": str(reconstructed_path.resolve()),
+            "sha256": _sha256(reconstructed_path),
+        }
+    )
     output_directory.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

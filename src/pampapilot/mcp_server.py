@@ -9,6 +9,17 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from .bridge_client import BridgeClient
+from .media_discovery import (
+    discover_song_media as discover_song_media_files,
+    resolve_input_file,
+    resolve_output_directory,
+)
+from .midi_cleanup import (
+    CleanupConfig,
+    analyze_midi_file,
+    preview_cleanup,
+    run_cleanup,
+)
 
 
 mcp = MCPServer(
@@ -19,7 +30,9 @@ mcp = MCPServer(
         "índices observados previamente. Después de cada mutación inspecciona "
         "observations.state_verified. No afirmes verificación de señal o perceptual "
         "si sus indicadores son false. Las ediciones producen transacciones undo; "
-        "save_project_as cambia la identidad del proyecto y devuelve un project_ref nuevo."
+        "save_project_as cambia la identidad del proyecto y devuelve un project_ref nuevo. "
+        "Las herramientas MIDI offline no requieren REAPER: preview_midi_cleanup nunca "
+        "escribe y clean_midi_files conserva los originales y sólo escribe en sessions/."
     ),
 )
 _bridge = BridgeClient()
@@ -38,8 +51,97 @@ class TrackMixItem(BaseModel):
     muted: bool | None = None
 
 
+class MidiCleanupOptions(BaseModel):
+    bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None
+    profile: Literal["generic", "guitar", "bass", "piano", "drums"] = "generic"
+    minimum_pitch: Annotated[int | None, Field(ge=0, le=127)] = None
+    maximum_pitch: Annotated[int | None, Field(ge=0, le=127)] = None
+    quantize: bool = False
+    quantize_division: Annotated[int, Field(ge=1, le=64)] = 16
+    quantize_tolerance_fraction: Annotated[float, Field(ge=0.0, le=0.5)] = 0.125
+    propose_missing_notes: bool = True
+
+
 def _call(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     return _bridge.call(action, params).to_dict()
+
+
+def _midi_config(options: MidiCleanupOptions | None) -> CleanupConfig:
+    options = options or MidiCleanupOptions()
+    return CleanupConfig(
+        bpm=options.bpm,
+        profile=options.profile,
+        minimum_pitch=options.minimum_pitch,
+        maximum_pitch=options.maximum_pitch,
+        quantize_division=options.quantize_division,
+        quantize_tolerance_fraction=options.quantize_tolerance_fraction,
+        enable_quantization=options.quantize,
+        propose_missing_notes=options.propose_missing_notes,
+    )
+
+
+@mcp.tool(
+    title="Descubrir medios de una canción",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def discover_song_media(
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+) -> dict[str, object]:
+    """Encuentra stems, MIDI, referencia y pares sugeridos sin abrir REAPER."""
+
+    return discover_song_media_files(song_name)
+
+
+@mcp.tool(
+    title="Analizar estructura MIDI",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def analyze_midi(
+    midi_path: Annotated[str, Field(min_length=1, max_length=4096)],
+) -> dict[str, Any]:
+    """Lee notas, tempo y defectos estructurales; no escribe archivos."""
+
+    path = resolve_input_file(midi_path, suffixes={".mid", ".midi"})
+    return analyze_midi_file(path)
+
+
+@mcp.tool(
+    title="Previsualizar limpieza MIDI",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_midi_cleanup(
+    midi_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    audio_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    options: MidiCleanupOptions | None = None,
+) -> dict[str, Any]:
+    """Compara MIDI/WAV y devuelve el plan completo sin crear ni cambiar archivos."""
+
+    midi = resolve_input_file(midi_path, suffixes={".mid", ".midi"})
+    audio = resolve_input_file(audio_path, suffixes={".wav"})
+    return preview_cleanup(midi, audio, config=_midi_config(options))
+
+
+@mcp.tool(
+    title="Generar variantes MIDI limpias",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def clean_midi_files(
+    midi_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    audio_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    output_directory: Annotated[str, Field(min_length=1, max_length=4096)],
+    options: MidiCleanupOptions | None = None,
+) -> dict[str, Any]:
+    """Conserva originales y escribe variantes auditables solamente en sessions/."""
+
+    midi = resolve_input_file(midi_path, suffixes={".mid", ".midi"})
+    audio = resolve_input_file(audio_path, suffixes={".wav"})
+    output = resolve_output_directory(output_directory)
+    return run_cleanup(midi, audio, output, config=_midi_config(options))
 
 
 @mcp.tool(

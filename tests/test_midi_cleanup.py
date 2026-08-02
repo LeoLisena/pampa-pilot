@@ -4,6 +4,9 @@ import tempfile
 from pathlib import Path
 import unittest
 
+import numpy as np
+import soundfile as sf
+
 from pampapilot.midi_cleanup import (
     CleanupConfig,
     MidiNote,
@@ -11,8 +14,10 @@ from pampapilot.midi_cleanup import (
     _has_pitch_collision,
     _octave_candidate,
     output_tempo_events,
+    analyze_midi_file,
     parse_midi,
     safe_cleanup,
+    preview_cleanup,
     write_midi,
 )
 
@@ -93,6 +98,38 @@ class MidiCleanupTests(unittest.TestCase):
         self.assertEqual(parsed.time_signature, (3, 4))
         self.assertEqual(parsed.unmatched_note_offs, 0)
         self.assertEqual(parsed.hanging_note_ons, 0)
+
+    def test_analysis_and_dry_run_do_not_write_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            midi_path = root / "instrument.mid"
+            audio_path = root / "instrument.wav"
+            write_midi(
+                midi_path,
+                [MidiNote(0, 480, 60, 90)],
+                ticks_per_beat=480,
+                bpm=120.0,
+                track_name="Instrument",
+            )
+            sample_rate = 22_050
+            time = np.arange(sample_rate, dtype=float) / sample_rate
+            audio = 0.2 * np.sin(2 * np.pi * 261.6256 * time)
+            sf.write(audio_path, audio, sample_rate)
+            before = {path.name for path in root.iterdir()}
+
+            analysis = analyze_midi_file(midi_path)
+            preview = preview_cleanup(
+                midi_path,
+                audio_path,
+                config=CleanupConfig(propose_missing_notes=False),
+            )
+            after = {path.name for path in root.iterdir()}
+
+        self.assertEqual(analysis["structure"]["note_count"], 1)
+        self.assertEqual(analysis["mode"], "analysis")
+        self.assertEqual(preview["mode"], "dry_run")
+        self.assertFalse(preview["outputs_written"])
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

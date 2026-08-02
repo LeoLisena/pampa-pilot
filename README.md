@@ -121,3 +121,9 @@ reemplazar mediante configuración:
 El original se preserva y se generan una variante segura, otra reconstruida y
 un reporte JSON auditable. La cuantización y la incorporación automática de
 notas faltantes están desactivadas por defecto.
+
+El servidor MCP expone además `discover_song_media`, `analyze_midi`,
+`preview_midi_cleanup` y `clean_midi_files`. Las tres primeras operaciones son
+de sólo lectura; la última conserva los originales y restringe sus salidas a
+`sessions/`. De esta manera el agente puede descubrir, explicar y previsualizar
+antes de generar archivos, sin que REAPER esté abierto.

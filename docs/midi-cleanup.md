@@ -94,3 +94,25 @@ report = run_cleanup(
 
 Esto permite exponer el mismo motor más adelante por MCP, por una interfaz web
 o por otro cerebro sin duplicar la lógica musical.
+
+## Herramientas MCP
+
+El servidor publica cuatro operaciones offline que no requieren conexión con
+REAPER:
+
+- `discover_song_media`: encuentra stems, MIDI, referencia y propone pares por
+  nombre normalizado;
+- `analyze_midi`: inspecciona estructura, tempo y reparaciones seguras sin leer
+  audio;
+- `preview_midi_cleanup`: ejecuta todo el análisis MIDI/WAV, pero devuelve un
+  `dry-run` con `outputs_written: false`;
+- `clean_midi_files`: genera las dos variantes y el reporte bajo `sessions/`.
+
+Por seguridad, las tres operaciones de análisis sólo aceptan entradas ubicadas
+en `media/` o `sessions/`. La operación de generación únicamente puede escribir
+dentro de `sessions/`, incluso si un cerebro solicita otra ruta. El MCP marca
+descubrimiento, análisis y previsualización como sólo lectura; la generación se
+marca como escritura no destructiva e idempotente.
+
+El análisis CQT puede tardar varios segundos en temas completos. Por eso la
+configuración de ejemplo del cliente asigna 120 segundos a las llamadas MCP.
