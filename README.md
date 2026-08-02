@@ -90,3 +90,13 @@ El reporte incluye formato, duración, LUFS, picos, RMS, factor de cresta,
 silencios, correlación estéreo, offset DC y posibles muestras saturadas. Estas
 mediciones son observaciones; las decisiones musicales se toman en una etapa
 posterior y siempre se verifican contra el estado de REAPER.
+
+## Ingreso recomendado desde Suno
+
+Cuando sea posible, cada canción debe llegar con la mezcla completa original de
+Suno, todos sus stems sin renormalizar y el BPM confirmado. PampaPilot conserva
+los niveles relativos de esa mezcla: no normaliza stems individualmente ni los
+trata como grabaciones crudas. Primero reconstruye y compara la suma; después
+busca artefactos de separación, duplicados, incompatibilidad mono o problemas
+audibles concretos. EQ, compresión y rebalanceo sólo se aplican con una razón
+verificable o una intención estética indicada por el usuario.

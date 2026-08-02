@@ -1,0 +1,37 @@
+id: mixing.suno.preserve-generated-balance
+title: Preservar el balance de stems derivados de Suno
+stage: mixing
+problem: Evitar destruir una mezcla generada que ya contiene decisiones razonables de nivel, panorama y dinámica.
+conditions:
+  - Los stems provienen de una canción previamente mezclada o separada por Suno.
+  - Sus amplitudes relativas forman parte del balance musical de origen.
+observations:
+  - Los stems no equivalen a grabaciones multipista crudas.
+  - Normalizar cada stem o llevarlos a un mismo loudness destruye el balance de origen.
+  - La separación puede contener bleed, artefactos y fuentes parcialmente correlacionadas.
+suggestion:
+  action: Usar la mezcla completa de Suno como referencia y realizar refinamiento conservador.
+  preserve_relative_levels: true
+  allowed_initial_change: Trim común para crear headroom, sin alterar relaciones entre pistas.
+  processing_priority:
+    - Verificar alineación y reconstrucción contra la mezcla completa.
+    - Detectar duplicados, artefactos de separación y problemas de fase o mono.
+    - Corregir sólo problemas audibles mediante EQ o dinámica mínima.
+    - Masterizar después de aprobar comparaciones A/B con la referencia.
+exceptions:
+  - Un stem claramente defectuoso, duplicado o exportado con nivel incorrecto puede requerir tratamiento individual.
+  - Una intención estética explícita del usuario puede justificar un rebalance creativo.
+verification:
+  - Comparar la suma procesada y la mezcla completa de Suno a loudness igualado.
+  - Confirmar que cada cambio mejora un problema identificable y no sólo modifica el sonido.
+  - Revisar estéreo, mono y ausencia de clipping.
+required_inputs_when_available:
+  - Mezcla completa original de Suno.
+  - Todos los stems sin renormalizar.
+  - BPM confirmado.
+  - Referencia estética opcional.
+sources:
+  - title: Descripción del flujo de trabajo del usuario
+    kind: user_requirement
+confidence: confirmed_workflow
+reviewed_at: 2026-08-02

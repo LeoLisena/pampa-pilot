@@ -8,13 +8,14 @@ conditions:
 observations:
   - LUFS integrado no compara bien el nivel percibido de stems con cantidades de silencio muy diferentes.
   - Panear un stem estéreo mediante balance puede alterar su imagen, no ubicar una fuente mono.
+  - Si los stems provienen de Suno, sus niveles relativos ya codifican una mezcla de referencia.
 suggestion:
   action: Conservar inicialmente las relaciones de nivel y la imagen estéreo de la fuente.
   initial_gain_db: -6.0
   initial_pan: 0.0
   duplicate_policy: No sumar versiones correlacionadas; elegir una y conservar la otra muteada.
 exceptions:
-  - Si los stems fueron exportados con normalización independiente, no conservan el balance original.
+  - Si los stems fueron exportados con normalización independiente, pueden no conservar el balance original.
   - Si una pista contiene clipping, DC anómalo o incompatibilidad mono grave, debe corregirse antes.
 verification:
   - Leer nuevamente volumen, paneo y mute de todas las pistas.
