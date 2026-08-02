@@ -5,7 +5,7 @@ Fecha: 2026-08-02
 Entorno:
 
 - REAPER 7.78/x64 para Windows;
-- puente Productor Musical 0.1.0;
+- puente PampaPilot 0.1.0;
 - MCP Python SDK 2.0.0;
 - proyecto desechable `fixtures/empty-smoke-test.rpp`.
 
@@ -44,4 +44,3 @@ Incidencias útiles encontradas durante la prueba:
   de desarrollo; la prueba definitiva se hizo en una instancia limpia;
 - la ventana de evaluación de REAPER no impide que el puente procese comandos,
   aunque sí bloquea interacciones visuales hasta pulsar `Still Evaluating`.
-

@@ -12,7 +12,7 @@ from .bridge_client import BridgeClient
 
 
 mcp = MCPServer(
-    "Productor Musical",
+    "PampaPilot",
     instructions=(
         "Controla únicamente el proyecto REAPER activo mediante acciones permitidas. "
         "Antes de mutar, llama health_check y conserva project_ref. Usa GUID, nunca "

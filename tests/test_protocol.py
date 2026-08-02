@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from productor_musical.protocol import ProtocolError, Request, Response
+from pampapilot.protocol import ProtocolError, Request, Response
 
 
 class RequestTests(unittest.TestCase):
@@ -61,4 +61,3 @@ class ResponseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -43,17 +43,17 @@ class BridgeResult:
 def default_ipc_root() -> Path:
     """Resuelve la misma carpeta que usa el script Lua de REAPER."""
 
-    configured = os.environ.get("PRODUCTOR_MUSICAL_IPC_ROOT")
+    configured = os.environ.get("PAMPAPILOT_IPC_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if not appdata:
-            raise RuntimeError("APPDATA no está definido; configure PRODUCTOR_MUSICAL_IPC_ROOT")
-        return Path(appdata) / "REAPER" / "ProductorMusical" / "ipc"
+            raise RuntimeError("APPDATA no está definido; configure PAMPAPILOT_IPC_ROOT")
+        return Path(appdata) / "REAPER" / "PampaPilot" / "ipc"
     if os.uname().sysname == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "REAPER" / "ProductorMusical" / "ipc"
-    return Path.home() / ".config" / "REAPER" / "ProductorMusical" / "ipc"
+        return Path.home() / "Library" / "Application Support" / "REAPER" / "PampaPilot" / "ipc"
+    return Path.home() / ".config" / "REAPER" / "PampaPilot" / "ipc"
 
 
 class BridgeClient:
@@ -96,4 +96,3 @@ class BridgeClient:
             observations=response.observations,
             request_id=response.request_id,
         )
-

@@ -1,7 +1,9 @@
-# Productor Musical
+# PampaPilot
 
-Prueba de concepto para controlar REAPER desde lenguaje natural sin acoplar la
-automatización a un proveedor de IA específico.
+Agente de producción musical con IA para controlar REAPER desde lenguaje natural
+sin acoplar la automatización a un proveedor de IA específico.
+
+> **PampaPilot — Your AI music production agent.**
 
 El principio central es separar responsabilidades:
 
@@ -42,7 +44,7 @@ Por ahora no requieren dependencias externas:
 El servidor local se inicia por `stdio` con:
 
 ```powershell
-.\.venv\Scripts\productor-musical-mcp.exe
+.\.venv\Scripts\python.exe -m pampapilot.mcp_server
 ```
 
 No imprime nada mientras espera un cliente MCP; ese silencio es normal.

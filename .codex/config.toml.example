@@ -1,6 +1,7 @@
 # Copiar como .codex/config.toml y reemplazar las rutas absolutas.
-[mcp_servers.productor_musical]
-command = "C:\\RUTA\\AL\\PROYECTO\\.venv\\Scripts\\productor-musical-mcp.exe"
+[mcp_servers.pampapilot]
+command = "C:\\RUTA\\AL\\PROYECTO\\.venv\\Scripts\\python.exe"
+args = ["-m", "pampapilot.mcp_server"]
 cwd = "C:\\RUTA\\AL\\PROYECTO"
 startup_timeout_sec = 10
 tool_timeout_sec = 15
@@ -8,6 +9,5 @@ enabled = true
 required = false
 default_tools_approval_mode = "writes"
 
-[mcp_servers.productor_musical.env]
-PRODUCTOR_MUSICAL_IPC_ROOT = "C:\\RUTA\\REAPER\\ProductorMusical\\ipc"
-
+[mcp_servers.pampapilot.env]
+PAMPAPILOT_IPC_ROOT = "C:\\RUTA\\REAPER\\PampaPilot\\ipc"

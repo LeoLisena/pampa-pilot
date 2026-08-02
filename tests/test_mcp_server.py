@@ -4,7 +4,7 @@ import unittest
 
 from mcp import Client
 
-from productor_musical.mcp_server import mcp
+from pampapilot.mcp_server import mcp
 
 
 class MCPServerTests(unittest.IsolatedAsyncioTestCase):

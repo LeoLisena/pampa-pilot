@@ -3,16 +3,16 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "productor-musical"
+name = "pampapilot"
 version = "0.1.0"
-description = "Automatización verificable de REAPER mediante MCP"
+description = "AI-powered music production agent for REAPER and other DAWs"
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=2,<3",
 ]
 
 [project.scripts]
-productor-musical-mcp = "productor_musical.mcp_server:main"
+pampapilot-mcp = "pampapilot.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [

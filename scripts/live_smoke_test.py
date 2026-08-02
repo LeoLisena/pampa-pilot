@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from productor_musical.bridge_client import BridgeClient
+from pampapilot.bridge_client import BridgeClient
 
 
 def normalized(path: str | Path) -> Path:
@@ -87,4 +87,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

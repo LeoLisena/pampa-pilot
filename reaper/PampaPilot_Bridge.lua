@@ -1,11 +1,11 @@
--- Productor Musical: puente local y verificable para REAPER.
+-- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
 local BRIDGE_VERSION = "0.1.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
-local SECTION = "ProductorMusicalBridge"
+local SECTION = "PampaPilotBridge"
 local INSTANCE_KEY = "active_instance"
 
 local separator = package.config:sub(1, 1)
@@ -18,7 +18,7 @@ local function configured_ipc_root()
   local config_path = script_dir .. "bridge_config.local.json"
   local stream = io.open(config_path, "rb")
   if not stream then
-    return reaper.GetResourcePath() .. separator .. "ProductorMusical" .. separator .. "ipc"
+    return reaper.GetResourcePath() .. separator .. "PampaPilot" .. separator .. "ipc"
   end
   local content = stream:read("*a")
   stream:close()
@@ -158,7 +158,7 @@ local function observations(state_verified)
 end
 
 local function run_transaction(project, request_id, description, callback)
-  local label = "Productor Musical: " .. description .. " [" .. request_id .. "]"
+  local label = "PampaPilot: " .. description .. " [" .. request_id .. "]"
   local before_count = reaper.GetProjectStateChangeCount(project)
   reaper.Undo_BeginBlock2(project)
   local ok, result = xpcall(callback, debug.traceback)
@@ -372,7 +372,7 @@ local function loop()
   if now - last_poll_at >= POLL_INTERVAL_SECONDS then
     last_poll_at = now
     local ok, err = xpcall(process_one, debug.traceback)
-    if not ok then reaper.ShowConsoleMsg("Productor Musical Bridge: " .. sanitize_error(err) .. "\n") end
+    if not ok then reaper.ShowConsoleMsg("PampaPilot Bridge: " .. sanitize_error(err) .. "\n") end
   end
   reaper.defer(loop)
 end
@@ -384,5 +384,5 @@ reaper.atexit(function()
     reaper.DeleteExtState(SECTION, INSTANCE_KEY, false)
   end
 end)
-reaper.ShowConsoleMsg("Productor Musical Bridge " .. BRIDGE_VERSION .. " iniciado.\n")
+reaper.ShowConsoleMsg("PampaPilot Bridge " .. BRIDGE_VERSION .. " iniciado.\n")
 loop()

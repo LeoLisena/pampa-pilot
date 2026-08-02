@@ -6,8 +6,8 @@ import threading
 import time
 import unittest
 
-from productor_musical.bridge_client import BridgeClient, BridgeError
-from productor_musical.protocol import Response
+from pampapilot.bridge_client import BridgeClient, BridgeError
+from pampapilot.protocol import Response
 
 
 class BridgeClientTests(unittest.TestCase):
@@ -74,4 +74,3 @@ class BridgeClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

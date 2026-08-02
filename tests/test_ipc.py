@@ -4,8 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from productor_musical.ipc import FilesystemIPC
-from productor_musical.protocol import Request, Response
+from pampapilot.ipc import FilesystemIPC
+from pampapilot.protocol import Request, Response
 
 
 class FilesystemIPCTests(unittest.TestCase):

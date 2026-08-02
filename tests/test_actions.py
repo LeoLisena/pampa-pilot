@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from productor_musical.actions import ACTION_SPECS, VerificationLevel, require_action
+from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 
 class ActionCatalogTests(unittest.TestCase):
@@ -22,4 +22,3 @@ class ActionCatalogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
