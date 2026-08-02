@@ -31,6 +31,13 @@ class AudioImportItem(BaseModel):
     position_seconds: Annotated[float, Field(ge=0.0)] = 0.0
 
 
+class TrackMixItem(BaseModel):
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)]
+    volume_db: Annotated[float | None, Field(ge=-60.0, le=12.0)] = None
+    pan: Annotated[float | None, Field(ge=-1.0, le=1.0)] = None
+    muted: bool | None = None
+
+
 def _call(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     return _bridge.call(action, params).to_dict()
 
@@ -109,6 +116,78 @@ def set_track_pan(
     return _call(
         "set_track_pan",
         {"project_ref": project_ref, "track_guid": track_guid, "pan": pan},
+    )
+
+
+@mcp.tool(
+    title="Ajustar volumen de pista",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def set_track_volume(
+    project_ref: str,
+    track_guid: str,
+    volume_db: Annotated[float, Field(ge=-60.0, le=12.0)],
+) -> dict[str, Any]:
+    """Ajusta volumen -60..+12 dB y verifica la lectura posterior."""
+
+    return _call(
+        "set_track_volume",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "volume_db": volume_db,
+        },
+    )
+
+
+@mcp.tool(
+    title="Silenciar o activar pista",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def set_track_mute(
+    project_ref: str,
+    track_guid: str,
+    muted: bool,
+) -> dict[str, Any]:
+    """Cambia el mute de una pista y verifica la lectura posterior."""
+
+    return _call(
+        "set_track_mute",
+        {"project_ref": project_ref, "track_guid": track_guid, "muted": muted},
+    )
+
+
+@mcp.tool(
+    title="Aplicar mezcla estática en lote",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def apply_track_mix_batch(
+    project_ref: str,
+    items: Annotated[list[TrackMixItem], Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Aplica volumen, paneo y mute como una sola transacción verificable."""
+
+    return _call(
+        "apply_track_mix_batch",
+        {
+            "project_ref": project_ref,
+            "items": [item.model_dump(exclude_none=True) for item in items],
+        },
     )
 
 

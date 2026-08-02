@@ -44,3 +44,27 @@ Incidencias útiles encontradas durante la prueba:
   de desarrollo; la prueba definitiva se hizo en una instancia limpia;
 - la ventana de evaluación de REAPER no impide que el puente procese comandos,
   aunque sí bloquea interacciones visuales hasta pulsar `Still Evaluating`.
+
+## Primera mezcla estática real
+
+Sobre `Mi Pequeño Sol.rpp`, el puente 0.2.0 leyó y validó 12 pistas a 85 BPM.
+Después se aplicaron volumen, paneo y mute mediante una sola transacción:
+
+- las 12 pistas quedaron en `-6 dB` y paneo central;
+- `Drums 1` y `Drums 2` quedaron muteadas como versiones alternativas;
+- `Drums OK 1` y `Drums OK 2` permanecieron activas;
+- una lectura independiente confirmó los 12 estados escritos.
+
+La suma flotante equivalente, todavía sin FX ni mastering, midió:
+
+```json
+{
+  "integrated_lufs": -20.4015,
+  "sample_peak_dbfs": -5.9581,
+  "samples_at_or_above_0_dbfs": 0,
+  "stereo_correlation": 0.7838
+}
+```
+
+La transacción permanece reversible y el proyecto no se guarda hasta completar
+la primera evaluación auditiva.

@@ -21,7 +21,10 @@ verificó el recorrido crear pista -> leer GUID -> ajustar paneo -> volver a lee
 También se verificó en vivo la importación y lectura posterior de un WAV estéreo
 de 48 kHz, el cambio de 120 a 85 BPM sin alterar el audio y el guardado de la
 sesión con nombre propio. La primera sesión real contiene 12 stems importados y
-guardados; el lote completo es una única transacción reversible.
+guardados; el lote completo es una única transacción reversible. El puente 0.2.0
+también aplica volumen, paneo y mute de varias pistas en una sola transacción. La
+primera mezcla estática real fue releída desde REAPER y su suma se verificó sin
+clipping antes de guardarla.
 
 ## Decisiones iniciales
 

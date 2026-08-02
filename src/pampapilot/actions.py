@@ -55,6 +55,24 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Ajusta paneo con comprobación de modo, ley y automatización.",
         ),
         ActionSpec(
+            "set_track_volume",
+            True,
+            VerificationLevel.STATE,
+            "Ajusta volumen en dB y verifica la ganancia lineal leída de REAPER.",
+        ),
+        ActionSpec(
+            "set_track_mute",
+            True,
+            VerificationLevel.STATE,
+            "Activa o desactiva mute y verifica el estado leído de REAPER.",
+        ),
+        ActionSpec(
+            "apply_track_mix_batch",
+            True,
+            VerificationLevel.STATE,
+            "Aplica volumen, paneo y mute a varias pistas en una transacción.",
+        ),
+        ActionSpec(
             "import_audio",
             True,
             VerificationLevel.STATE,

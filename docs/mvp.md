@@ -16,18 +16,23 @@ Sobre un proyecto de prueba desechable:
 5. `set_track_pan` cambia el paneo dentro de un modo soportado y verifica por
    lectura el valor, el modo, la ley de paneo y el estado de automatización. La
    primera versión admite modo heredado del proyecto, clásico y balance.
-6. `add_stock_fx` agrega un efecto nativo permitido y devuelve GUID, nombre,
+6. `set_track_volume` cambia el fader en dB, evita automatización activa y
+   verifica la ganancia lineal leída posteriormente.
+7. `set_track_mute` silencia o reactiva una pista y verifica el estado leído.
+8. `apply_track_mix_batch` valida todas las pistas y aplica volumen, paneo y mute
+   como una sola transacción reversible.
+9. `add_stock_fx` agrega un efecto nativo permitido y devuelve GUID, nombre,
    bypass y estado offline.
-7. `set_stock_fx_parameter` usa un adaptador específico y verifica tanto el valor
+10. `set_stock_fx_parameter` usa un adaptador específico y verifica tanto el valor
    normalizado como la representación formateada por REAPER.
-8. `undo_transaction` restaura el estado anterior y lo comprueba.
-9. `import_audio` crea pista, ítem y toma desde un WAV permitido; fija el audio a
+11. `undo_transaction` restaura el estado anterior y lo comprueba.
+12. `import_audio` crea pista, ítem y toma desde un WAV permitido; fija el audio a
    tiempo absoluto y verifica ruta, duración, canales y sample rate.
-10. `set_project_tempo` cambia BPM y comprueba que posición, duración y playrate
+13. `set_project_tempo` cambia BPM y comprueba que posición, duración y playrate
     de los ítems existentes no hayan variado.
-11. `save_project_as` crea un `.rpp` nuevo dentro de una raíz local permitida y
+14. `save_project_as` crea un `.rpp` nuevo dentro de una raíz local permitida y
     devuelve la identidad nueva del proyecto.
-12. `import_audio_batch` valida todos los WAV antes de escribir y crea el lote
+15. `import_audio_batch` valida todos los WAV antes de escribir y crea el lote
     completo dentro de una sola transacción reversible.
 
 ## Criterios de éxito

@@ -20,6 +20,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "get_track_state",
                 "create_track",
                 "set_track_pan",
+                "set_track_volume",
+                "set_track_mute",
+                "apply_track_mix_batch",
                 "import_audio",
                 "import_audio_batch",
                 "set_project_tempo",
@@ -33,6 +36,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
+        self.assertTrue(tools["set_track_volume"].annotations.idempotent_hint)
+        self.assertTrue(tools["set_track_mute"].annotations.idempotent_hint)
+        self.assertTrue(tools["apply_track_mix_batch"].annotations.idempotent_hint)
         self.assertFalse(tools["import_audio"].annotations.destructive_hint)
         self.assertFalse(tools["import_audio"].annotations.idempotent_hint)
         self.assertFalse(tools["import_audio_batch"].annotations.idempotent_hint)

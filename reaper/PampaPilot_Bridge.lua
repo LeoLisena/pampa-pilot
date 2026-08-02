@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.1.0"
+local BRIDGE_VERSION = "0.2.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -129,6 +129,20 @@ local function require_number(value, name, minimum, maximum)
   return value
 end
 
+local function require_boolean(value, name)
+  if type(value) ~= "boolean" then error(name .. " debe ser booleano") end
+  return value
+end
+
+local function db_to_amplitude(db)
+  return 10 ^ (db / 20)
+end
+
+local function amplitude_to_db(amplitude)
+  if amplitude <= 0 then return -150.0 end
+  return 20 * math.log(amplitude, 10)
+end
+
 local function normalized_absolute_path(value, name)
   local path = require_string(value, name, 4096)
   local absolute = separator == "\\" and path:match("^%a:[\\/]") or path:sub(1, 1) == "/"
@@ -201,11 +215,13 @@ end
 
 local function read_track(track, index)
   local _, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+  local volume = reaper.GetMediaTrackInfo_Value(track, "D_VOL")
   return {
     guid = reaper.GetTrackGUID(track),
     index = index,
     name = name or "",
-    volume = reaper.GetMediaTrackInfo_Value(track, "D_VOL"),
+    volume = volume,
+    volume_db = amplitude_to_db(volume),
     pan = reaper.GetMediaTrackInfo_Value(track, "D_PAN"),
     width = reaper.GetMediaTrackInfo_Value(track, "D_WIDTH"),
     pan_mode = reaper.GetMediaTrackInfo_Value(track, "I_PANMODE"),
@@ -426,6 +442,138 @@ function ACTIONS.set_track_pan(params, request_id)
       error("la lectura posterior del paneo no coincide")
     end
     return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.set_track_volume(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local volume_db = require_number(params.volume_db, "volume_db", -60.0, 12.0)
+  local amplitude = db_to_amplitude(volume_db)
+  local automation_mode = reaper.GetMediaTrackInfo_Value(track, "I_AUTOMODE")
+  if automation_mode ~= 0 then
+    error("la pista tiene automatización activa; el MVP no la sobrescribe")
+  end
+  local result = run_transaction(project, request_id, "ajustar volumen", function()
+    local written = reaper.SetMediaTrackInfo_Value(track, "D_VOL", amplitude)
+    if not written then error("REAPER rechazó el valor de volumen") end
+    local state = read_track(track, index)
+    if math.abs(state.volume - amplitude) > 0.000001 then
+      error("la lectura posterior del volumen no coincide")
+    end
+    if math.abs(state.volume_db - volume_db) > 0.00001 then
+      error("la lectura posterior del volumen en dB no coincide")
+    end
+    return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.set_track_mute(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local muted = require_boolean(params.muted, "muted")
+  local automation_mode = reaper.GetMediaTrackInfo_Value(track, "I_AUTOMODE")
+  if automation_mode ~= 0 then
+    error("la pista tiene automatización activa; el MVP no la sobrescribe")
+  end
+  local result = run_transaction(project, request_id, "ajustar mute", function()
+    local written = reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)
+    if not written then error("REAPER rechazó el valor de mute") end
+    local state = read_track(track, index)
+    if state.muted ~= muted then error("la lectura posterior del mute no coincide") end
+    return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.apply_track_mix_batch(params, request_id)
+  local project, _, ref = require_project(params)
+  if type(params.items) ~= "table" or #params.items < 1 or #params.items > 64 then
+    error("items debe contener entre 1 y 64 ajustes")
+  end
+
+  local targets = {}
+  local seen = {}
+  for position, item in ipairs(params.items) do
+    if type(item) ~= "table" then error("cada ajuste debe ser un objeto") end
+    local guid = require_string(item.track_guid, "track_guid", 64)
+    if seen[guid] then error("track_guid duplicado en items: " .. guid) end
+    seen[guid] = true
+
+    local track, index = find_track_by_guid(project, guid)
+    local volume_db = item.volume_db == nil
+      and nil or require_number(item.volume_db, "volume_db", -60.0, 12.0)
+    local pan = item.pan == nil
+      and nil or require_number(item.pan, "pan", -1.0, 1.0)
+    local muted = item.muted == nil
+      and nil or require_boolean(item.muted, "muted")
+    if volume_db == nil and pan == nil and muted == nil then
+      error("el ajuste " .. position .. " no contiene cambios")
+    end
+
+    local automation_mode = reaper.GetMediaTrackInfo_Value(track, "I_AUTOMODE")
+    if automation_mode ~= 0 then
+      error("la pista " .. guid .. " tiene automatización activa")
+    end
+    if pan ~= nil then
+      local pan_mode = reaper.GetMediaTrackInfo_Value(track, "I_PANMODE")
+      if pan_mode ~= -1 and pan_mode ~= 0 and pan_mode ~= 3 then
+        error("la pista " .. guid .. " usa un modo de paneo no admitido")
+      end
+    end
+    targets[#targets + 1] = {
+      track = track,
+      index = index,
+      guid = guid,
+      volume_db = volume_db,
+      pan = pan,
+      muted = muted,
+    }
+  end
+
+  local result = run_transaction(project, request_id, "aplicar mezcla estática", function()
+    local states = {}
+    for _, target in ipairs(targets) do
+      if target.volume_db ~= nil then
+        if not reaper.SetMediaTrackInfo_Value(
+          target.track, "D_VOL", db_to_amplitude(target.volume_db)) then
+          error("REAPER rechazó el volumen de " .. target.guid)
+        end
+      end
+      if target.pan ~= nil then
+        if not reaper.SetMediaTrackInfo_Value(target.track, "D_PAN", target.pan) then
+          error("REAPER rechazó el paneo de " .. target.guid)
+        end
+      end
+      if target.muted ~= nil then
+        if not reaper.SetMediaTrackInfo_Value(
+          target.track, "B_MUTE", target.muted and 1 or 0) then
+          error("REAPER rechazó el mute de " .. target.guid)
+        end
+      end
+
+      local state = read_track(target.track, target.index)
+      if target.volume_db ~= nil and math.abs(state.volume_db - target.volume_db) > 0.00001 then
+        error("la lectura posterior del volumen no coincide en " .. target.guid)
+      end
+      if target.pan ~= nil and math.abs(state.pan - target.pan) > 0.000001 then
+        error("la lectura posterior del paneo no coincide en " .. target.guid)
+      end
+      if target.muted ~= nil and state.muted ~= target.muted then
+        error("la lectura posterior del mute no coincide en " .. target.guid)
+      end
+      states[#states + 1] = state
+    end
+    return {
+      project_ref = ref,
+      tracks = states,
+      transaction_request_id = request_id,
+    }
   end)
   return result, observations(true)
 end

@@ -1,0 +1,29 @@
+id: mixing.baseline.preserve-source-balance
+title: Primera mezcla reversible de stems estéreo
+stage: mixing
+problem: Crear una referencia con headroom sin confundir mediciones objetivas con decisiones estéticas.
+conditions:
+  - Los stems empiezan juntos y provienen de una misma generación o separación.
+  - Todavía no existe una escucha comparativa ni un render medido de la suma.
+observations:
+  - LUFS integrado no compara bien el nivel percibido de stems con cantidades de silencio muy diferentes.
+  - Panear un stem estéreo mediante balance puede alterar su imagen, no ubicar una fuente mono.
+suggestion:
+  action: Conservar inicialmente las relaciones de nivel y la imagen estéreo de la fuente.
+  initial_gain_db: -6.0
+  initial_pan: 0.0
+  duplicate_policy: No sumar versiones correlacionadas; elegir una y conservar la otra muteada.
+exceptions:
+  - Si los stems fueron exportados con normalización independiente, no conservan el balance original.
+  - Si una pista contiene clipping, DC anómalo o incompatibilidad mono grave, debe corregirse antes.
+verification:
+  - Leer nuevamente volumen, paneo y mute de todas las pistas.
+  - Renderizar la suma y medir pico y loudness antes de procesar dinámica.
+  - Comparar en estéreo y mono; luego ajustar por escucha.
+sources:
+  - title: Reporte objetivo local de stems
+    path: sessions/Mi Pequeño Sol/analysis/stems.json
+  - title: Estado estructural leído desde REAPER
+    path: sessions/Mi Pequeño Sol/Mi Pequeño Sol.rpp
+confidence: draft
+reviewed_at: 2026-08-02
