@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pampapilot"
 version = "0.1.0"
 description = "AI-powered music production agent for REAPER and other DAWs"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "mcp>=2,<3",
 ]
@@ -15,12 +15,20 @@ dependencies = [
 pampapilot-mcp = "pampapilot.mcp_server:main"
 
 [project.optional-dependencies]
+analysis = [
+    "numpy>=2,<3",
+    "soundfile>=0.13,<1",
+    "pyloudnorm>=0.1.1,<1",
+]
 dev = [
     "pytest>=8,<10",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+system-certs = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

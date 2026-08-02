@@ -26,7 +26,7 @@ guardados; el lote completo es una única transacción reversible.
 ## Decisiones iniciales
 
 - Windows y REAPER 7 como primera plataforma.
-- Python 3.12+ para MCP, análisis de audio/MIDI y orquestación.
+- Python 3.12.13 para MCP, análisis de audio/MIDI y orquestación.
 - Lua/ReaScript para el adaptador que vive dentro de REAPER.
 - MCP oficial v2, con el servidor local conectado por `stdio` al principio.
 - Intercambio local por archivos atómicos y versionados entre Python y Lua.
@@ -37,18 +37,30 @@ guardados; el lote completo es una única transacción reversible.
 La arquitectura y sus límites están en [docs/architecture.md](docs/architecture.md).
 El primer recorrido verificable está en [docs/mvp.md](docs/mvp.md).
 
-## Pruebas locales
+## Entorno Python reproducible
 
-Por ahora no requieren dependencias externas:
+En Windows x64, un único comando descarga una copia verificada de `uv 0.12.1`,
+instala Python 3.12.13 y sincroniza exactamente las dependencias del proyecto:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -v
+.\scripts\bootstrap.ps1
+```
+
+Las herramientas, Python y el entorno se guardan localmente en `.tools/`,
+`.runtime/` y `.venv-pampapilot/`; no se versionan. El repositorio sí conserva
+`.python-version`, `pyproject.toml` y `uv.lock`, por lo que otra máquina puede
+reconstruir el mismo entorno sin depender del Python instalado en Windows.
+
+## Pruebas locales
+
+```powershell
+.\.venv-pampapilot\Scripts\python.exe -m pytest -v
 ```
 
 El servidor local se inicia por `stdio` con:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pampapilot.mcp_server
+.\scripts\run-mcp.ps1
 ```
 
 No imprime nada mientras espera un cliente MCP; ese silencio es normal.
@@ -61,3 +73,17 @@ El puente de REAPER usa además `reaper/bridge_config.local.json`, copiado desde
 `reaper/bridge_config.example.json`. Sólo permite importar medios ubicados bajo
 `allowed_media_roots` y guardar proyectos bajo `allowed_project_roots`; los stems
 locales de `media/` y las sesiones de `sessions/` están excluidos de Git.
+
+## Análisis offline de stems
+
+El análisis objetivo se ejecuta fuera de REAPER para no bloquear su interfaz:
+
+```powershell
+.\.venv-pampapilot\Scripts\python.exe .\scripts\analyze_stems.py `
+  "C:\RUTA\A\LOS\STEMS" "C:\RUTA\AL\REPORTE\stems.json"
+```
+
+El reporte incluye formato, duración, LUFS, picos, RMS, factor de cresta,
+silencios, correlación estéreo, offset DC y posibles muestras saturadas. Estas
+mediciones son observaciones; las decisiones musicales se toman en una etapa
+posterior y siempre se verifican contra el estado de REAPER.

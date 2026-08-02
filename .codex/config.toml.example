@@ -1,6 +1,6 @@
 # Copiar como .codex/config.toml y reemplazar las rutas absolutas.
 [mcp_servers.pampapilot]
-command = "C:\\RUTA\\AL\\PROYECTO\\.venv\\Scripts\\python.exe"
+command = "C:\\RUTA\\AL\\PROYECTO\\.venv-pampapilot\\Scripts\\python.exe"
 args = ["-m", "pampapilot.mcp_server"]
 cwd = "C:\\RUTA\\AL\\PROYECTO"
 startup_timeout_sec = 10
