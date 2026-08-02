@@ -203,9 +203,9 @@ def apply_track_mix_batch(
 def add_stock_fx(
     project_ref: str,
     track_guid: str,
-    fx_type: Literal["reacomp"],
+    fx_type: Literal["reacomp", "reaeq"],
 ) -> dict[str, Any]:
-    """Agrega ReaComp, verifica su identidad y devuelve sus parámetros observados."""
+    """Agrega ReaComp o ReaEQ y verifica identidad, GUID y estado."""
 
     return _call(
         "add_stock_fx",
@@ -251,6 +251,53 @@ def configure_reacomp(
             "rms_ms": rms_ms,
             "auto_makeup": auto_makeup,
             "auto_release": auto_release,
+        },
+    )
+
+
+@mcp.tool(
+    title="Configurar una banda de ReaEQ",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_reaeq_band(
+    project_ref: str,
+    track_guid: str,
+    fx_guid: str,
+    band_index: Annotated[int, Field(ge=0, le=7)],
+    band_type: Literal[
+        "high_pass",
+        "low_shelf",
+        "bell",
+        "notch",
+        "high_shelf",
+        "low_pass",
+        "band_pass",
+        "parallel_band_pass",
+    ],
+    frequency_hz: Annotated[float, Field(ge=20.0, le=20000.0)],
+    gain_db: Annotated[float, Field(ge=-24.0, le=24.0)] = 0.0,
+    q: Annotated[float, Field(ge=0.1, le=10.0)] = 0.71,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Configura una banda existente por tipo e índice y devuelve su estado."""
+
+    return _call(
+        "configure_reaeq_band",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "band_index": band_index,
+            "band_type": band_type,
+            "frequency_hz": frequency_hz,
+            "gain_db": gain_db,
+            "q": q,
+            "enabled": enabled,
         },
     )
 

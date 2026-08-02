@@ -25,6 +25,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_track_mix_batch",
                 "add_stock_fx",
                 "configure_reacomp",
+                "configure_reaeq_band",
                 "import_audio",
                 "import_audio_batch",
                 "set_project_tempo",
@@ -45,6 +46,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
         self.assertTrue(tools["configure_reacomp"].annotations.idempotent_hint)
         self.assertFalse(tools["configure_reacomp"].annotations.destructive_hint)
+        self.assertTrue(tools["configure_reaeq_band"].annotations.idempotent_hint)
+        self.assertFalse(tools["configure_reaeq_band"].annotations.destructive_hint)
         self.assertFalse(tools["import_audio"].annotations.destructive_hint)
         self.assertFalse(tools["import_audio"].annotations.idempotent_hint)
         self.assertFalse(tools["import_audio_batch"].annotations.idempotent_hint)

@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.4.2"
+local BRIDGE_VERSION = "0.5.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -407,6 +407,66 @@ local function set_reacomp_boolean_parameter(track, fx_index, ident, target)
   end
 end
 
+local REAEQ_BAND_TYPES = {
+  high_pass = 0,
+  low_shelf = 1,
+  bell = 2,
+  notch = 3,
+  high_shelf = 4,
+  low_pass = 5,
+  band_pass = 6,
+  parallel_band_pass = 7,
+}
+
+local REAEQ_BAND_TYPE_NAMES = {}
+for name, value in pairs(REAEQ_BAND_TYPES) do REAEQ_BAND_TYPE_NAMES[value] = name end
+
+local REAEQ_PARAM_TYPE_NAMES = { [0] = "frequency", [1] = "gain", [2] = "q" }
+
+local function require_integer(value, name, minimum, maximum)
+  local number = require_number(value, name, minimum, maximum)
+  if number % 1 ~= 0 then error(name .. " debe ser entero") end
+  return number
+end
+
+local function require_reaeq(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reaeq", 1, true) then
+    error("el FX indicado no es ReaEQ")
+  end
+  if not fx.enabled or fx.offline then error("ReaEQ debe estar activo y online") end
+  return fx
+end
+
+local function read_reaeq_band(track, fx_index, band_type, band_index)
+  local parameters = {}
+  for parameter_index = 0, reaper.TrackFX_GetNumParams(track, fx_index) - 1 do
+    local ok, observed_type, observed_index, parameter_type, normalized =
+      reaper.TrackFX_GetEQParam(track, fx_index, parameter_index)
+    if ok and observed_type == band_type and observed_index == band_index then
+      local formatted_ok, formatted = reaper.TrackFX_GetFormattedParamValue(
+        track, fx_index, parameter_index)
+      if not formatted_ok then error("REAPER no formateó un parámetro de ReaEQ") end
+      parameters[REAEQ_PARAM_TYPE_NAMES[parameter_type] or tostring(parameter_type)] = {
+        index = parameter_index,
+        normalized = normalized,
+        formatted = formatted or "",
+      }
+    end
+  end
+  if not parameters.frequency or not parameters.gain or not parameters.q then
+    error("ReaEQ no contiene la banda solicitada")
+  end
+  return {
+    band_type = REAEQ_BAND_TYPE_NAMES[band_type],
+    band_type_code = band_type,
+    band_index = band_index,
+    enabled = reaper.TrackFX_GetEQBandEnabled(
+      track, fx_index, band_type, band_index),
+    parameters = parameters,
+  }
+end
+
 local function read_imported_item(item, take)
   local item_ok, item_guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
   local take_ok, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
@@ -759,19 +819,28 @@ function ACTIONS.add_stock_fx(params, request_id)
   local project, _, ref = require_project(params)
   local track, index = find_track_by_guid(project, params.track_guid)
   local fx_type = require_string(params.fx_type, "fx_type", 32)
-  if fx_type ~= "reacomp" then error("el único FX permitido actualmente es reacomp") end
+  local plugin_name
+  local expected_name
+  local description
+  if fx_type == "reacomp" then
+    plugin_name, expected_name, description = "ReaComp (Cockos)", "reacomp", "agregar ReaComp"
+  elseif fx_type == "reaeq" then
+    plugin_name, expected_name, description = "ReaEQ (Cockos)", "reaeq", "agregar ReaEQ"
+  else
+    error("FX nativo no permitido")
+  end
   local before_count = reaper.TrackFX_GetCount(track)
-  local result = run_transaction(project, request_id, "agregar ReaComp", function()
-    local fx_index = reaper.TrackFX_AddByName(track, "ReaComp (Cockos)", false, -1)
-    if fx_index < 0 then error("REAPER no pudo agregar ReaComp") end
+  local result = run_transaction(project, request_id, description, function()
+    local fx_index = reaper.TrackFX_AddByName(track, plugin_name, false, -1)
+    if fx_index < 0 then error("REAPER no pudo agregar " .. expected_name) end
     if reaper.TrackFX_GetCount(track) ~= before_count + 1 then
       error("la cantidad de FX no aumentó exactamente en uno")
     end
     local fx = read_fx(track, fx_index, true)
-    if not fx.name:lower():find("reacomp", 1, true) then
-      error("el FX agregado no se identificó como ReaComp")
+    if not fx.name:lower():find(expected_name, 1, true) then
+      error("el FX agregado no tiene la identidad esperada")
     end
-    if not fx.enabled or fx.offline then error("ReaComp no quedó activo y online") end
+    if not fx.enabled or fx.offline then error("el FX no quedó activo y online") end
     local track_state = read_track(track, index)
     if track_state.fx_count ~= before_count + 1 then
       error("la lectura posterior de la pista no refleja el FX agregado")
@@ -780,6 +849,73 @@ function ACTIONS.add_stock_fx(params, request_id)
       project_ref = ref,
       track = track_state,
       fx = fx,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_reaeq_band(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  require_reaeq(track, fx_index)
+  local band_type_name = require_string(params.band_type, "band_type", 32)
+  local band_type = REAEQ_BAND_TYPES[band_type_name]
+  if band_type == nil then error("tipo de banda ReaEQ no permitido") end
+  local band_index = require_integer(params.band_index, "band_index", 0, 7)
+  local frequency_hz = require_number(params.frequency_hz, "frequency_hz", 20.0, 20000.0)
+  local gain_db = require_number(params.gain_db, "gain_db", -24.0, 24.0)
+  local q = require_number(params.q, "q", 0.1, 10.0)
+  local enabled = require_boolean(params.enabled, "enabled")
+
+  -- La API nativa dirige las bandas por tipo y ocurrencia dentro de ese tipo.
+  -- Se exige que la banda exista; cambiar/agregar tipos será otra operación explícita.
+  read_reaeq_band(track, fx_index, band_type, band_index)
+  local result = run_transaction(project, request_id, "configurar banda ReaEQ", function()
+    if not reaper.TrackFX_SetEQParam(
+        track, fx_index, band_type, band_index, 0, frequency_hz, false) then
+      error("REAPER rechazó la frecuencia de ReaEQ")
+    end
+    if not reaper.TrackFX_SetEQParam(
+        track, fx_index, band_type, band_index, 1, db_to_amplitude(gain_db), false) then
+      error("REAPER rechazó la ganancia de ReaEQ")
+    end
+    if not reaper.TrackFX_SetEQParam(
+        track, fx_index, band_type, band_index, 2, q, false) then
+      error("REAPER rechazó Q de ReaEQ")
+    end
+    if not reaper.TrackFX_SetEQBandEnabled(
+        track, fx_index, band_type, band_index, enabled) then
+      error("REAPER rechazó habilitar o deshabilitar la banda ReaEQ")
+    end
+    local band = read_reaeq_band(track, fx_index, band_type, band_index)
+    if band.band_type ~= band_type_name then error("el tipo de banda leído no coincide") end
+    if band.enabled ~= enabled then error("el estado leído de la banda no coincide") end
+    local frequency_observed = parse_formatted_number(band.parameters.frequency.formatted)
+    local gain_observed = parse_formatted_number(band.parameters.gain.formatted)
+    local q_observed = parse_formatted_number(band.parameters.q.formatted)
+    if not frequency_observed
+      or math.abs(frequency_observed - frequency_hz) > math.max(0.11, frequency_hz * 0.001) then
+      error("la frecuencia leída de ReaEQ no coincide")
+    end
+    if not gain_observed or math.abs(gain_observed - gain_db) > 0.11 then
+      error("la ganancia leída de ReaEQ no coincide")
+    end
+    if not q_observed or math.abs(q_observed - q) > 0.011 then
+      error("Q leído de ReaEQ no coincide")
+    end
+    return {
+      project_ref = ref,
+      track_guid = params.track_guid,
+      fx = read_fx(track, fx_index, false),
+      band = band,
+      requested = {
+        frequency_hz = frequency_hz,
+        gain_db = gain_db,
+        q = q,
+        enabled = enabled,
+      },
       transaction_request_id = request_id,
     }
   end)

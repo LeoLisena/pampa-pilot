@@ -109,6 +109,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Configura ReaComp en unidades musicales mediante un adaptador explícito.",
         ),
         ActionSpec(
+            "configure_reaeq_band",
+            True,
+            VerificationLevel.STATE,
+            "Configura una banda de ReaEQ en unidades musicales y relee su estado.",
+        ),
+        ActionSpec(
             "undo_transaction",
             True,
             VerificationLevel.STATE,

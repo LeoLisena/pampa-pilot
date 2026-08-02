@@ -24,9 +24,10 @@ sesión con nombre propio. La primera sesión real contiene 12 stems importados 
 guardados; el lote completo es una única transacción reversible. El puente
 también aplica volumen, paneo y mute de varias pistas en una sola transacción. La
 primera mezcla estática real fue releída desde REAPER y su suma se verificó sin
-clipping antes de guardarla. El puente 0.4.2 agrega ReaComp por GUID y lo configura
-en unidades musicales; cada valor se calibra contra lo que muestra el propio FX y
-se vuelve a leer dentro de una única transacción reversible.
+clipping antes de guardarla. El puente 0.5.1 agrega ReaComp y ReaEQ por GUID. El
+compresor se configura en unidades musicales y ReaEQ permite controlar bandas
+existentes por tipo e índice, con frecuencia, ganancia, Q y estado habilitado. Los
+valores se vuelven a leer dentro de una única transacción reversible.
 
 ## Decisiones iniciales
 
