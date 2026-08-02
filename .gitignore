@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Estado local y mensajes del puente. Nunca se versionan.
+.runtime/
+*.rpp-bak
+reaper/bridge_config.local.json
+.codex/config.toml
