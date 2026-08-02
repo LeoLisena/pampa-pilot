@@ -1,0 +1,85 @@
+id: mixing.reacomp.supervised-starting-points
+title: Puntos de partida supervisados para ReaComp
+stage: mixing
+purpose: Proponer valores iniciales útiles para que el usuario haga el ajuste fino por escucha.
+principles:
+  - Un preset es una hipótesis inicial, no una decisión final de mezcla.
+  - En stems de Suno se evita comprimir por rutina porque pueden contener dinámica ya procesada.
+  - Se aplica ReaComp sólo a la pista indicada y se verifican sus parámetros en REAPER.
+  - El usuario compara activado y bypass a volumen percibido semejante.
+workflow:
+  - Identificar el problema o la intención: estabilizar, controlar picos o dar cohesión.
+  - Elegir el perfil más cercano y aplicar sus valores iniciales.
+  - Verificar en REAPER identidad del FX, parámetros, bypass y estado online.
+  - Escuchar una sección representativa y ajustar primero threshold, después ratio y tiempos.
+  - Conservar o guardar una versión nueva sólo después de la aprobación del usuario.
+profiles:
+  vocal_gentle:
+    intent: Estabilizar levemente una voz ya procesada sin quitar naturalidad.
+    starting_values:
+      threshold_db: -10.0
+      ratio: 1.5
+      attack_ms: 15.0
+      release_ms: 120.0
+      knee_db: 3.0
+      rms_ms: 5.0
+      auto_makeup: false
+      auto_release: false
+    fine_tuning:
+      - Si casi no cambia, bajar threshold en pasos de 1 a 2 dB.
+      - Si la voz pierde ataque o dicción, aumentar attack.
+      - Si se oye bombeo, aumentar release o reducir ratio.
+      - Si queda demasiado contenida, subir threshold antes de compensar volumen.
+    expected_gain_reduction_db: 1.0_to_3.0_on_peaks
+  backing_vocals_glue:
+    intent: Unificar coros sin llevarlos al frente.
+    starting_values:
+      threshold_db: -12.0
+      ratio: 2.0
+      attack_ms: 10.0
+      release_ms: 150.0
+      knee_db: 3.0
+      rms_ms: 10.0
+      auto_makeup: false
+      auto_release: false
+    expected_gain_reduction_db: 2.0_to_4.0_on_peaks
+  bass_control:
+    intent: Reducir variaciones evidentes manteniendo el cuerpo del bajo.
+    starting_values:
+      threshold_db: -12.0
+      ratio: 2.0
+      attack_ms: 25.0
+      release_ms: 120.0
+      knee_db: 3.0
+      rms_ms: 10.0
+      auto_makeup: false
+      auto_release: false
+    expected_gain_reduction_db: 2.0_to_4.0_on_peaks
+  drum_bus_gentle:
+    intent: Dar cohesión sin aplastar transitorios.
+    starting_values:
+      threshold_db: -8.0
+      ratio: 1.5
+      attack_ms: 30.0
+      release_ms: 120.0
+      knee_db: 2.0
+      rms_ms: 5.0
+      auto_makeup: false
+      auto_release: false
+    expected_gain_reduction_db: 1.0_to_2.0_on_peaks
+current_validation:
+  song: Mi Pequeño Sol
+  track: Vocals
+  profile: vocal_gentle
+  source_sample_peak_dbfs: -3.05
+  theoretical_peak_reduction_ceiling_db: 2.32
+  state_verified_in_reaper: true
+  perceptually_approved: false
+  note: El techo es una estimación estática; la escucha del usuario decide el ajuste final.
+sources:
+  - title: Flujo de trabajo indicado por el usuario
+    kind: user_requirement
+  - title: Análisis objetivo local del stem vocal
+    path: sessions/Mi Pequeño Sol/analysis/stems.json
+confidence: working_defaults
+reviewed_at: 2026-08-02
