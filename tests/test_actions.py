@@ -7,7 +7,7 @@ from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 class ActionCatalogTests(unittest.TestCase):
     def test_first_mvp_has_small_explicit_allowlist(self) -> None:
-        self.assertEqual(len(ACTION_SPECS), 11)
+        self.assertEqual(len(ACTION_SPECS), 12)
         self.assertFalse(require_action("health_check").mutates_project)
         self.assertTrue(require_action("set_track_pan").mutates_project)
         self.assertEqual(
@@ -15,6 +15,7 @@ class ActionCatalogTests(unittest.TestCase):
             VerificationLevel.STATE,
         )
         self.assertTrue(require_action("import_audio").mutates_project)
+        self.assertTrue(require_action("import_audio_batch").mutates_project)
         self.assertEqual(
             require_action("set_project_tempo").minimum_verification,
             VerificationLevel.STATE,

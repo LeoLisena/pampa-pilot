@@ -20,7 +20,8 @@ verificó el recorrido crear pista -> leer GUID -> ajustar paneo -> volver a lee
 -> deshacer ambas transacciones. El proyecto terminó con su estructura inicial.
 También se verificó en vivo la importación y lectura posterior de un WAV estéreo
 de 48 kHz, el cambio de 120 a 85 BPM sin alterar el audio y el guardado de la
-sesión con nombre propio. Las ediciones siguen siendo transacciones reversibles.
+sesión con nombre propio. La primera sesión real contiene 12 stems importados y
+guardados; el lote completo es una única transacción reversible.
 
 ## Decisiones iniciales
 

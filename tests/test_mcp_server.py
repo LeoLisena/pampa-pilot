@@ -21,6 +21,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "create_track",
                 "set_track_pan",
                 "import_audio",
+                "import_audio_batch",
                 "set_project_tempo",
                 "save_project_as",
                 "undo_transaction",
@@ -34,8 +35,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
         self.assertFalse(tools["import_audio"].annotations.destructive_hint)
         self.assertFalse(tools["import_audio"].annotations.idempotent_hint)
+        self.assertFalse(tools["import_audio_batch"].annotations.idempotent_hint)
         self.assertTrue(tools["set_project_tempo"].annotations.idempotent_hint)
         self.assertFalse(tools["save_project_as"].annotations.destructive_hint)
+        self.assertTrue(tools["save_project_as"].annotations.idempotent_hint)
         self.assertTrue(tools["undo_transaction"].annotations.destructive_hint)
 
 

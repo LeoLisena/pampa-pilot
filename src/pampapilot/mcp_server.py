@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from .bridge_client import BridgeClient
 
@@ -23,6 +23,12 @@ mcp = MCPServer(
     ),
 )
 _bridge = BridgeClient()
+
+
+class AudioImportItem(BaseModel):
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)]
+    track_name: Annotated[str, Field(min_length=1, max_length=128)]
+    position_seconds: Annotated[float, Field(ge=0.0)] = 0.0
 
 
 def _call(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -135,6 +141,30 @@ def import_audio(
 
 
 @mcp.tool(
+    title="Importar lote de audio",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def import_audio_batch(
+    project_ref: str,
+    items: Annotated[list[AudioImportItem], Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Importa un lote de WAV como una sola transacción con verificación."""
+
+    return _call(
+        "import_audio_batch",
+        {
+            "project_ref": project_ref,
+            "items": [item.model_dump() for item in items],
+        },
+    )
+
+
+@mcp.tool(
     title="Ajustar tempo del proyecto",
     annotations=ToolAnnotations(
         read_only_hint=False,
@@ -160,7 +190,7 @@ def set_project_tempo(
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,
-        idempotent_hint=False,
+        idempotent_hint=True,
         open_world_hint=False,
     ),
 )

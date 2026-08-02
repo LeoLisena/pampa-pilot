@@ -61,6 +61,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Importa un archivo permitido en una pista nueva y verifica el ítem.",
         ),
         ActionSpec(
+            "import_audio_batch",
+            True,
+            VerificationLevel.STATE,
+            "Importa varios WAV como una única transacción verificable.",
+        ),
+        ActionSpec(
             "set_project_tempo",
             True,
             VerificationLevel.STATE,

@@ -27,6 +27,8 @@ Sobre un proyecto de prueba desechable:
     de los ítems existentes no hayan variado.
 11. `save_project_as` crea un `.rpp` nuevo dentro de una raíz local permitida y
     devuelve la identidad nueva del proyecto.
+12. `import_audio_batch` valida todos los WAV antes de escribir y crea el lote
+    completo dentro de una sola transacción reversible.
 
 ## Criterios de éxito
 
@@ -41,8 +43,8 @@ Sobre un proyecto de prueba desechable:
 
 ## Siguiente rebanada
 
-Después de aprobar este recorrido: preparar una sesión completa desde una carpeta
-de entrada, importar todos los stems con nombres únicos, guardarla y medir su
-contenido. Luego se agregará un render de prueba y comparación de archivo. La
-limpieza de MIDI vendrá después con fixtures que contengan notas duplicadas,
-eventos fuera de rango, canales inconsistentes y silencios anómalos.
+Después de aprobar este recorrido: analizar señal, organizar grupos y preparar
+una mezcla estática supervisada. Luego se agregará un render de prueba y
+comparación de archivo. La limpieza de MIDI vendrá después con fixtures que
+contengan notas duplicadas, eventos fuera de rango, canales inconsistentes y
+silencios anómalos.

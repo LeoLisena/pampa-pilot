@@ -430,67 +430,106 @@ function ACTIONS.set_track_pan(params, request_id)
   return result, observations(true)
 end
 
+local function import_audio_into_new_track(project, file_path, track_name, position)
+  local index = reaper.CountTracks(project)
+  reaper.InsertTrackInProject(project, index, 0)
+  local track = reaper.GetTrack(project, index)
+  if not track then error("REAPER no devolvió la pista para importar") end
+  if not reaper.GetSetMediaTrackInfo_String(track, "P_NAME", track_name, true) then
+    error("REAPER rechazó el nombre de la pista")
+  end
+  local item = reaper.AddMediaItemToTrack(track)
+  if not item then error("REAPER no pudo crear el ítem") end
+  if not reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0) then
+    error("REAPER rechazó el timebase absoluto del ítem")
+  end
+  if not reaper.SetMediaItemInfo_Value(item, "C_AUTOSTRETCH", 0) then
+    error("REAPER rechazó desactivar auto-stretch en el ítem")
+  end
+  local take = reaper.AddTakeToMediaItem(item)
+  if not take then error("REAPER no pudo crear la toma") end
+  local source = reaper.PCM_Source_CreateFromFile(file_path)
+  if not source then error("REAPER no pudo abrir el WAV") end
+  local source_length, length_is_qn = reaper.GetMediaSourceLength(source)
+  if length_is_qn or source_length <= 0 then
+    reaper.PCM_Source_Destroy(source)
+    error("la fuente WAV no informó una duración válida en segundos")
+  end
+  if not reaper.SetMediaItemTake_Source(take, source) then
+    reaper.PCM_Source_Destroy(source)
+    error("REAPER no pudo asignar la fuente a la toma")
+  end
+  if not reaper.SetMediaItemPosition(item, position, false) then
+    error("REAPER rechazó la posición del ítem")
+  end
+  if not reaper.SetMediaItemLength(item, source_length, false) then
+    error("REAPER rechazó la duración del ítem")
+  end
+  local track_state = read_track(track, index)
+  local item_state = read_imported_item(item, take)
+  if track_state.name ~= track_name then error("el nombre leído de la pista no coincide") end
+  if normalized_absolute_path(item_state.take.source_path, "source_path")
+    ~= normalized_absolute_path(file_path, "file_path") then
+    error("la ruta leída de la fuente no coincide")
+  end
+  if math.abs(item_state.position_seconds - position) > 0.000001 then
+    error("la posición leída del ítem no coincide")
+  end
+  if math.abs(item_state.length_seconds - source_length) > 0.000001 then
+    error("la duración leída del ítem no coincide")
+  end
+  if item_state.timebase ~= 0 or item_state.auto_stretch then
+    error("el ítem importado no quedó fijado a tiempo absoluto")
+  end
+  return { track = track_state, item = item_state }
+end
+
 function ACTIONS.import_audio(params, request_id)
   local project, _, ref = require_project(params)
   local file_path = require_allowed_audio_path(params.file_path)
   local track_name = require_string(params.track_name, "track_name", 128)
   local position = params.position_seconds == nil
     and 0.0 or require_number(params.position_seconds, "position_seconds", 0.0)
-  local index = reaper.CountTracks(project)
   local result = run_transaction(project, request_id, "importar audio", function()
-    reaper.InsertTrackInProject(project, index, 0)
-    local track = reaper.GetTrack(project, index)
-    if not track then error("REAPER no devolvió la pista para importar") end
-    if not reaper.GetSetMediaTrackInfo_String(track, "P_NAME", track_name, true) then
-      error("REAPER rechazó el nombre de la pista")
-    end
-    local item = reaper.AddMediaItemToTrack(track)
-    if not item then error("REAPER no pudo crear el ítem") end
-    if not reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0) then
-      error("REAPER rechazó el timebase absoluto del ítem")
-    end
-    if not reaper.SetMediaItemInfo_Value(item, "C_AUTOSTRETCH", 0) then
-      error("REAPER rechazó desactivar auto-stretch en el ítem")
-    end
-    local take = reaper.AddTakeToMediaItem(item)
-    if not take then error("REAPER no pudo crear la toma") end
-    local source = reaper.PCM_Source_CreateFromFile(file_path)
-    if not source then error("REAPER no pudo abrir el WAV") end
-    local source_length, length_is_qn = reaper.GetMediaSourceLength(source)
-    if length_is_qn or source_length <= 0 then
-      reaper.PCM_Source_Destroy(source)
-      error("la fuente WAV no informó una duración válida en segundos")
-    end
-    if not reaper.SetMediaItemTake_Source(take, source) then
-      reaper.PCM_Source_Destroy(source)
-      error("REAPER no pudo asignar la fuente a la toma")
-    end
-    if not reaper.SetMediaItemPosition(item, position, false) then
-      error("REAPER rechazó la posición del ítem")
-    end
-    if not reaper.SetMediaItemLength(item, source_length, false) then
-      error("REAPER rechazó la duración del ítem")
-    end
-    local track_state = read_track(track, index)
-    local item_state = read_imported_item(item, take)
-    if track_state.name ~= track_name then error("el nombre leído de la pista no coincide") end
-    if normalized_absolute_path(item_state.take.source_path, "source_path")
-      ~= normalized_absolute_path(file_path, "file_path") then
-      error("la ruta leída de la fuente no coincide")
-    end
-    if math.abs(item_state.position_seconds - position) > 0.000001 then
-      error("la posición leída del ítem no coincide")
-    end
-    if math.abs(item_state.length_seconds - source_length) > 0.000001 then
-      error("la duración leída del ítem no coincide")
-    end
-    if item_state.timebase ~= 0 or item_state.auto_stretch then
-      error("el ítem importado no quedó fijado a tiempo absoluto")
+    local imported = import_audio_into_new_track(project, file_path, track_name, position)
+    return {
+      project_ref = ref,
+      track = imported.track,
+      item = imported.item,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.import_audio_batch(params, request_id)
+  local project, _, ref = require_project(params)
+  if type(params.items) ~= "table" then error("items debe ser un arreglo") end
+  if #params.items < 1 or #params.items > 64 then error("items debe contener entre 1 y 64 entradas") end
+  local validated, paths, names = {}, {}, {}
+  for index, item in ipairs(params.items) do
+    if type(item) ~= "table" then error("cada entrada de items debe ser un objeto") end
+    local file_path = require_allowed_audio_path(item.file_path)
+    local track_name = require_string(item.track_name, "track_name", 128)
+    local position = item.position_seconds == nil
+      and 0.0 or require_number(item.position_seconds, "position_seconds", 0.0)
+    local normalized_path = normalized_absolute_path(file_path, "file_path")
+    if paths[normalized_path] then error("items contiene un archivo duplicado") end
+    if names[track_name] then error("items contiene un nombre de pista duplicado") end
+    paths[normalized_path], names[track_name] = true, true
+    validated[index] = { file_path = file_path, track_name = track_name, position = position }
+  end
+  local result = run_transaction(project, request_id, "importar lote de audio", function()
+    local imports = {}
+    for index, item in ipairs(validated) do
+      imports[index] = import_audio_into_new_track(
+        project, item.file_path, item.track_name, item.position
+      )
     end
     return {
       project_ref = ref,
-      track = track_state,
-      item = item_state,
+      imported_count = #imports,
+      imports = imports,
       transaction_request_id = request_id,
     }
   end)
@@ -525,11 +564,20 @@ end
 function ACTIONS.save_project_as(params, _)
   local project, old_path, old_ref = require_project(params)
   local target_path = require_allowed_project_path(params.project_path)
-  if file_exists(target_path) then error("el proyecto de destino ya existe; no se sobrescribe") end
+  local target_normalized = normalized_absolute_path(target_path, "project_path")
+  local saving_current = old_path ~= ""
+    and normalized_absolute_path(old_path, "current_project_path") == target_normalized
+  if file_exists(target_path) and not saving_current then
+    error("el proyecto de destino ya existe; no se sobrescribe")
+  end
   local directory = target_path:match("^(.*)[\\/][^\\/]+$")
   if not directory or directory == "" then error("project_path no contiene directorio") end
   reaper.RecursiveCreateDirectory(directory, 0)
-  reaper.Main_SaveProjectEx(project, target_path, 8)
+  if saving_current then
+    reaper.Main_SaveProject(project, false)
+  else
+    reaper.Main_SaveProjectEx(project, target_path, 8)
+  end
   local observed_project, observed_path, observed_ref = project_context()
   if observed_project ~= project then error("REAPER cambió de instancia de proyecto al guardar") end
   if normalized_absolute_path(observed_path, "observed_project_path")
@@ -544,6 +592,7 @@ function ACTIONS.save_project_as(params, _)
     project_ref = observed_ref,
     track_count = reaper.CountTracks(project),
     tempo_bpm = reaper.Master_GetTempo(),
+    created_new_file = not saving_current,
     saved = true,
   }, observations(true)
 end
