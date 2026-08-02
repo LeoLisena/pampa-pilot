@@ -18,7 +18,8 @@ mcp = MCPServer(
         "Antes de mutar, llama health_check y conserva project_ref. Usa GUID, nunca "
         "índices observados previamente. Después de cada mutación inspecciona "
         "observations.state_verified. No afirmes verificación de señal o perceptual "
-        "si sus indicadores son false. Las mutaciones producen transacciones undo."
+        "si sus indicadores son false. Las ediciones producen transacciones undo; "
+        "save_project_as cambia la identidad del proyecto y devuelve un project_ref nuevo."
     ),
 )
 _bridge = BridgeClient()
@@ -130,6 +131,48 @@ def import_audio(
             "track_name": track_name,
             "position_seconds": position_seconds,
         },
+    )
+
+
+@mcp.tool(
+    title="Ajustar tempo del proyecto",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def set_project_tempo(
+    project_ref: str,
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+) -> dict[str, Any]:
+    """Ajusta BPM y verifica que posiciones, duraciones y playrate no cambien."""
+
+    return _call(
+        "set_project_tempo",
+        {"project_ref": project_ref, "bpm": bpm},
+    )
+
+
+@mcp.tool(
+    title="Guardar proyecto con nombre nuevo",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def save_project_as(
+    project_ref: str,
+    project_path: Annotated[str, Field(min_length=1, max_length=4096)],
+) -> dict[str, Any]:
+    """Guarda como RPP nuevo dentro de las raíces de sesiones permitidas."""
+
+    return _call(
+        "save_project_as",
+        {"project_ref": project_ref, "project_path": project_path},
     )
 
 

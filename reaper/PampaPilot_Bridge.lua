@@ -21,6 +21,7 @@ local function load_bridge_config()
     return {
       ipc_root = reaper.GetResourcePath() .. separator .. "PampaPilot" .. separator .. "ipc",
       allowed_media_roots = {},
+      allowed_project_roots = {},
     }
   end
   local content = stream:read("*a")
@@ -33,15 +34,20 @@ local function load_bridge_config()
   if config.allowed_media_roots ~= nil and type(config.allowed_media_roots) ~= "table" then
     error("allowed_media_roots debe ser un arreglo")
   end
+  if config.allowed_project_roots ~= nil and type(config.allowed_project_roots) ~= "table" then
+    error("allowed_project_roots debe ser un arreglo")
+  end
   return {
     ipc_root = config.ipc_root,
     allowed_media_roots = config.allowed_media_roots or {},
+    allowed_project_roots = config.allowed_project_roots or {},
   }
 end
 
 local bridge_config = load_bridge_config()
 local ipc_root = bridge_config.ipc_root
 local allowed_media_roots = bridge_config.allowed_media_roots
+local allowed_project_roots = bridge_config.allowed_project_roots
 local pending_dir = ipc_root .. separator .. "requests" .. separator .. "pending"
 local processing_dir = ipc_root .. separator .. "requests" .. separator .. "processing"
 local responses_dir = ipc_root .. separator .. "responses"
@@ -158,6 +164,23 @@ local function require_allowed_audio_path(value)
   return path
 end
 
+local function require_allowed_project_path(value)
+  local path = require_string(value, "project_path", 4096)
+  if path:lower():sub(-4) ~= ".rpp" then error("project_path debe terminar en .rpp") end
+  local candidate = normalized_absolute_path(path, "project_path")
+  local allowed = false
+  for _, root_value in ipairs(allowed_project_roots) do
+    local root = normalized_absolute_path(root_value, "allowed_project_roots")
+    local prefix = root .. separator
+    if candidate:sub(1, #prefix) == prefix then
+      allowed = true
+      break
+    end
+  end
+  if not allowed then error("project_path está fuera de allowed_project_roots") end
+  return path
+end
+
 local function require_project(params)
   if type(params) ~= "table" then error("params debe ser un objeto") end
   local project, path, ref = project_context()
@@ -207,6 +230,8 @@ local function read_imported_item(item, take)
     guid = item_guid,
     position_seconds = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
     length_seconds = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+    timebase = reaper.GetMediaItemInfo_Value(item, "C_BEATATTACHMODE"),
+    auto_stretch = reaper.GetMediaItemInfo_Value(item, "C_AUTOSTRETCH") ~= 0,
     take = {
       guid = take_guid,
       source_path = reaper.GetMediaSourceFileName(source),
@@ -217,6 +242,82 @@ local function read_imported_item(item, take)
       channels = reaper.GetMediaSourceNumChannels(source),
     },
   }
+end
+
+local function snapshot_item_timing(project)
+  local snapshot = {}
+  for index = 0, reaper.CountMediaItems(project) - 1 do
+    local item = reaper.GetMediaItem(project, index)
+    local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+    if not ok or guid == "" then error("REAPER no devolvió GUID de un ítem") end
+    local take = reaper.GetActiveTake(item)
+    local take_source = take and reaper.GetMediaItemTake_Source(take) or nil
+    local source_type = take_source and reaper.GetMediaSourceType(take_source) or ""
+    snapshot[guid] = {
+      position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+      length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+      playrate = take and reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") or nil,
+      is_audio = source_type ~= "" and source_type ~= "MIDI",
+    }
+  end
+  return snapshot
+end
+
+local function lock_audio_items_to_time(project, snapshot)
+  local locked = 0
+  for index = 0, reaper.CountMediaItems(project) - 1 do
+    local item = reaper.GetMediaItem(project, index)
+    local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+    if not ok or guid == "" then error("REAPER no devolvió GUID de un ítem") end
+    local expected = snapshot[guid]
+    if expected and expected.is_audio then
+      if not reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0) then
+        error("REAPER rechazó el timebase absoluto de un ítem de audio")
+      end
+      if not reaper.SetMediaItemInfo_Value(item, "C_AUTOSTRETCH", 0) then
+        error("REAPER rechazó desactivar auto-stretch en un ítem de audio")
+      end
+      locked = locked + 1
+    end
+  end
+  return locked
+end
+
+local function verify_item_timing_unchanged(project, before)
+  local remaining = 0
+  for _ in pairs(before) do remaining = remaining + 1 end
+  for index = 0, reaper.CountMediaItems(project) - 1 do
+    local item = reaper.GetMediaItem(project, index)
+    local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+    if not ok or guid == "" then error("REAPER no devolvió GUID de un ítem") end
+    local expected = before[guid]
+    if not expected then error("el cambio de tempo creó o reemplazó un ítem") end
+    local position = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    local take = reaper.GetActiveTake(item)
+    local playrate = take and reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") or nil
+    if math.abs(position - expected.position) > 0.000001 then
+      error("el cambio de tempo desplazó un ítem")
+    end
+    if math.abs(length - expected.length) > 0.000001 then
+      error("el cambio de tempo alteró la duración de un ítem")
+    end
+    if playrate ~= expected.playrate
+      and (playrate == nil or expected.playrate == nil
+        or math.abs(playrate - expected.playrate) > 0.000001) then
+      error("el cambio de tempo alteró la velocidad de reproducción de una toma")
+    end
+    if expected.is_audio then
+      if reaper.GetMediaItemInfo_Value(item, "C_BEATATTACHMODE") ~= 0 then
+        error("un ítem de audio no quedó fijado a tiempo absoluto")
+      end
+      if reaper.GetMediaItemInfo_Value(item, "C_AUTOSTRETCH") ~= 0 then
+        error("un ítem de audio conserva auto-stretch")
+      end
+    end
+    remaining = remaining - 1
+  end
+  if remaining ~= 0 then error("el cambio de tempo eliminó un ítem") end
 end
 
 local function observations(state_verified)
@@ -259,6 +360,7 @@ function ACTIONS.health_check(_, _)
     project_path = path,
     project_ref = ref,
     track_count = reaper.CountTracks(project),
+    tempo_bpm = reaper.Master_GetTempo(),
     project_state_change_count = reaper.GetProjectStateChangeCount(project),
   }, observations(true)
 end
@@ -273,6 +375,7 @@ function ACTIONS.get_project_state(_, _)
     project_ref = ref,
     project_path = path,
     track_count = #tracks,
+    tempo_bpm = reaper.Master_GetTempo(),
     project_state_change_count = reaper.GetProjectStateChangeCount(project),
     tracks = tracks,
   }, observations(true)
@@ -343,6 +446,12 @@ function ACTIONS.import_audio(params, request_id)
     end
     local item = reaper.AddMediaItemToTrack(track)
     if not item then error("REAPER no pudo crear el ítem") end
+    if not reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0) then
+      error("REAPER rechazó el timebase absoluto del ítem")
+    end
+    if not reaper.SetMediaItemInfo_Value(item, "C_AUTOSTRETCH", 0) then
+      error("REAPER rechazó desactivar auto-stretch en el ítem")
+    end
     local take = reaper.AddTakeToMediaItem(item)
     if not take then error("REAPER no pudo crear la toma") end
     local source = reaper.PCM_Source_CreateFromFile(file_path)
@@ -375,6 +484,9 @@ function ACTIONS.import_audio(params, request_id)
     if math.abs(item_state.length_seconds - source_length) > 0.000001 then
       error("la duración leída del ítem no coincide")
     end
+    if item_state.timebase ~= 0 or item_state.auto_stretch then
+      error("el ítem importado no quedó fijado a tiempo absoluto")
+    end
     return {
       project_ref = ref,
       track = track_state,
@@ -383,6 +495,57 @@ function ACTIONS.import_audio(params, request_id)
     }
   end)
   return result, observations(true)
+end
+
+function ACTIONS.set_project_tempo(params, request_id)
+  local project, _, ref = require_project(params)
+  local bpm = require_number(params.bpm, "bpm", 20.0, 400.0)
+  local before_tempo = reaper.Master_GetTempo()
+  local before_items = snapshot_item_timing(project)
+  local result = run_transaction(project, request_id, "ajustar tempo", function()
+    local locked_items = lock_audio_items_to_time(project, before_items)
+    reaper.SetCurrentBPM(project, bpm, false)
+    local observed_tempo = reaper.Master_GetTempo()
+    if math.abs(observed_tempo - bpm) > 0.000001 then
+      error("la lectura posterior del tempo no coincide")
+    end
+    verify_item_timing_unchanged(project, before_items)
+    return {
+      project_ref = ref,
+      tempo_before_bpm = before_tempo,
+      tempo_bpm = observed_tempo,
+      preserved_item_count = reaper.CountMediaItems(project),
+      audio_items_locked_to_time = locked_items,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.save_project_as(params, _)
+  local project, old_path, old_ref = require_project(params)
+  local target_path = require_allowed_project_path(params.project_path)
+  if file_exists(target_path) then error("el proyecto de destino ya existe; no se sobrescribe") end
+  local directory = target_path:match("^(.*)[\\/][^\\/]+$")
+  if not directory or directory == "" then error("project_path no contiene directorio") end
+  reaper.RecursiveCreateDirectory(directory, 0)
+  reaper.Main_SaveProjectEx(project, target_path, 8)
+  local observed_project, observed_path, observed_ref = project_context()
+  if observed_project ~= project then error("REAPER cambió de instancia de proyecto al guardar") end
+  if normalized_absolute_path(observed_path, "observed_project_path")
+    ~= normalized_absolute_path(target_path, "project_path") then
+    error("REAPER no adoptó la ruta nueva del proyecto")
+  end
+  if not file_exists(target_path) then error("REAPER no creó el archivo de proyecto") end
+  return {
+    previous_project_path = old_path,
+    previous_project_ref = old_ref,
+    project_path = observed_path,
+    project_ref = observed_ref,
+    track_count = reaper.CountTracks(project),
+    tempo_bpm = reaper.Master_GetTempo(),
+    saved = true,
+  }, observations(true)
 end
 
 function ACTIONS.undo_transaction(params, _)

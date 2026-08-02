@@ -61,6 +61,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Importa un archivo permitido en una pista nueva y verifica el ítem.",
         ),
         ActionSpec(
+            "set_project_tempo",
+            True,
+            VerificationLevel.STATE,
+            "Ajusta el tempo global y comprueba que no cambie el timing del audio.",
+        ),
+        ActionSpec(
+            "save_project_as",
+            True,
+            VerificationLevel.STATE,
+            "Guarda el proyecto activo con una ruta nueva permitida y la verifica.",
+        ),
+        ActionSpec(
             "add_stock_fx",
             True,
             VerificationLevel.STATE,

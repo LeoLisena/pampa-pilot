@@ -21,6 +21,12 @@ Sobre un proyecto de prueba desechable:
 7. `set_stock_fx_parameter` usa un adaptador específico y verifica tanto el valor
    normalizado como la representación formateada por REAPER.
 8. `undo_transaction` restaura el estado anterior y lo comprueba.
+9. `import_audio` crea pista, ítem y toma desde un WAV permitido; fija el audio a
+   tiempo absoluto y verifica ruta, duración, canales y sample rate.
+10. `set_project_tempo` cambia BPM y comprueba que posición, duración y playrate
+    de los ítems existentes no hayan variado.
+11. `save_project_as` crea un `.rpp` nuevo dentro de una raíz local permitida y
+    devuelve la identidad nueva del proyecto.
 
 ## Criterios de éxito
 
@@ -35,8 +41,8 @@ Sobre un proyecto de prueba desechable:
 
 ## Siguiente rebanada
 
-Después de aprobar este recorrido: importar un WAV desde una carpeta permitida,
-medir duración/canales/sample rate, crear un render de prueba y comparar el
-archivo producido. La limpieza de MIDI vendrá después con fixtures que contengan
-notas duplicadas, eventos fuera de rango, canales inconsistentes y silencios
-anómalos.
+Después de aprobar este recorrido: preparar una sesión completa desde una carpeta
+de entrada, importar todos los stems con nombres únicos, guardarla y medir su
+contenido. Luego se agregará un render de prueba y comparación de archivo. La
+limpieza de MIDI vendrá después con fixtures que contengan notas duplicadas,
+eventos fuera de rango, canales inconsistentes y silencios anómalos.

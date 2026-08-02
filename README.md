@@ -18,6 +18,9 @@ El principio central es separar responsabilidades:
 La etapa 0 y la primera integración están terminadas. En REAPER 7.78/x64 se
 verificó el recorrido crear pista -> leer GUID -> ajustar paneo -> volver a leer
 -> deshacer ambas transacciones. El proyecto terminó con su estructura inicial.
+También se verificó en vivo la importación y lectura posterior de un WAV estéreo
+de 48 kHz, el cambio de 120 a 85 BPM sin alterar el audio y el guardado de la
+sesión con nombre propio. Las ediciones siguen siendo transacciones reversibles.
 
 ## Decisiones iniciales
 
@@ -55,4 +58,5 @@ real es local y no se versiona.
 
 El puente de REAPER usa además `reaper/bridge_config.local.json`, copiado desde
 `reaper/bridge_config.example.json`. Sólo permite importar medios ubicados bajo
-`allowed_media_roots`; los stems locales de `media/` están excluidos de Git.
+`allowed_media_roots` y guardar proyectos bajo `allowed_project_roots`; los stems
+locales de `media/` y las sesiones de `sessions/` están excluidos de Git.

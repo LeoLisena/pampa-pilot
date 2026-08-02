@@ -14,3 +14,4 @@ reaper/bridge_config.local.json
 
 # Audio, MIDI y renders locales. Nunca se publican en GitHub.
 media/
+sessions/
