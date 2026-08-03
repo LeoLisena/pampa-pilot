@@ -1,0 +1,29 @@
+id: workflow.supervised-item-fades
+title: Puntos de partida para fades de ítems
+stage: editing
+purpose: Evitar clics y transiciones abruptas sin recortar ataques o colas musicales.
+profiles:
+  click_prevention:
+    fade_in_seconds: 0.005
+    fade_out_seconds: 0.005
+    fade_in_shape: 0
+    fade_out_shape: 0
+    fade_in_curve: 0.0
+    fade_out_curve: 0.0
+  full_stem_edges:
+    fade_in_seconds: 0.02
+    fade_out_seconds: 0.05
+    fade_in_shape: 0
+    fade_out_shape: 0
+    fade_in_curve: 0.0
+    fade_out_curve: 0.0
+principles:
+  - Los fades no deben superar juntos la duración del ítem.
+  - Escuchar ataques, consonantes, respiraciones y colas antes de aceptar.
+  - Usar fades breves para prevenir clics; no ocultar errores de edición con fades largos.
+confidence: conservative_working_defaults
+reviewed_at: 2026-08-03
+sources:
+  - title: REAPER ReaScript API - media item fade attributes
+    url: https://www.reaper.fm/sdk/reascript/reascripthelp.html
+    kind: official_api_documentation

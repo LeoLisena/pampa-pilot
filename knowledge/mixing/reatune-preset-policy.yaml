@@ -1,0 +1,30 @@
+version: 1
+scope: reatune_presets
+
+policy:
+  recommended_name_prefix: "PampaPilot - "
+  require_name_prefix: false
+  require_exact_name_match: true
+  require_fx_guid: true
+  reject_unknown_presets: true
+  preserve_failed_transaction_with_undo: true
+
+naming_convention:
+  format: "PampaPilot - <source> - <intensity> - <key> <scale>"
+  examples:
+    - "PampaPilot - Organic Vocal - Natural - C Major"
+    - "PampaPilot - Organic Vocal - Tight - A Minor"
+    - "PampaPilot - Suno Vocal - Subtle - G Major"
+
+required_catalog_metadata:
+  - source_kind
+  - intensity
+  - musical_key
+  - scale
+  - reaper_version_validated
+  - human_auditioned
+
+guidance:
+  suno_stems: "Preferir Subtle; la fuente normalmente ya contiene procesamiento."
+  organic_vocals: "Natural como inicio; Tight requiere escucha y aprobación humana."
+  final_decision: "La afinación se valida siempre por escucha, nunca sólo por estado."

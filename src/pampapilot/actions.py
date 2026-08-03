@@ -85,6 +85,24 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Localiza una pista por GUID y lee su estado.",
         ),
         ActionSpec(
+            "get_track_items",
+            False,
+            VerificationLevel.STATE,
+            "Lee GUID, posición, duración y fades de los ítems de una pista.",
+        ),
+        ActionSpec(
+            "inspect_track_volume_envelope",
+            False,
+            VerificationLevel.STATE,
+            "Lee la envolvente de volumen existente sin crearla ni modificarla.",
+        ),
+        ActionSpec(
+            "configure_item_fades",
+            True,
+            VerificationLevel.STATE,
+            "Configura fades exactos de un ítem por GUID y relee sus valores.",
+        ),
+        ActionSpec(
             "set_track_pan",
             True,
             VerificationLevel.STATE,
@@ -161,6 +179,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Quita una instancia FX permitida exacta mediante GUID.",
+        ),
+        ActionSpec(
+            "configure_reatune_preset",
+            True,
+            VerificationLevel.STATE,
+            "Aplica por nombre un preset explícito a una instancia ReaTune y verifica la lectura posterior.",
         ),
         ActionSpec(
             "create_effect_bus",

@@ -7,16 +7,20 @@ from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 class ActionCatalogTests(unittest.TestCase):
     def test_first_mvp_has_small_explicit_allowlist(self) -> None:
-        self.assertEqual(len(ACTION_SPECS), 41)
+        self.assertEqual(len(ACTION_SPECS), 45)
         self.assertFalse(require_action("health_check").mutates_project)
         self.assertFalse(require_action("discover_project_fx").mutates_project)
         self.assertFalse(require_action("discover_installed_fx").mutates_project)
         self.assertFalse(require_action("get_render_settings").mutates_project)
         self.assertFalse(require_action("get_master_track_state").mutates_project)
         self.assertTrue(require_action("render_master_candidate").mutates_project)
+        self.assertFalse(require_action("get_track_items").mutates_project)
+        self.assertFalse(require_action("inspect_track_volume_envelope").mutates_project)
+        self.assertTrue(require_action("configure_item_fades").mutates_project)
         self.assertTrue(require_action("restore_render_settings").mutates_project)
         self.assertTrue(require_action("add_master_stock_fx").mutates_project)
         self.assertTrue(require_action("remove_track_fx").mutates_project)
+        self.assertTrue(require_action("configure_reatune_preset").mutates_project)
         self.assertTrue(require_action("create_effect_bus").mutates_project)
         self.assertTrue(require_action("configure_ambience_fx").mutates_project)
         self.assertTrue(require_action("create_bus_send").mutates_project)

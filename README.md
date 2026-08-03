@@ -55,6 +55,10 @@ post-fader identificados por GUID. Los retardos musicales se convierten a
 milisegundos usando el BPM vigente y cada routing desactiva el transporte MIDI.
 Suno usa perfiles de ambiente deliberadamente más sutiles que las fuentes
 orgánicas, pero no queda excluido de la audición.
+El puente 0.17.0 agrega edición verificable de fades por GUID e inspección de
+envolventes de volumen. El puente 0.18.0 incorpora ReaTune mediante presets
+propios: identifica la instancia por GUID, carga un nombre exacto y comprueba
+que REAPER lo conservó, sin depender de parámetros internos no expuestos.
 
 ## Decisiones iniciales
 

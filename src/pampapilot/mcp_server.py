@@ -953,6 +953,76 @@ def get_track_state(project_ref: str, track_guid: str) -> dict[str, Any]:
 
 
 @mcp.tool(
+    title="Leer ítems y fades de una pista",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_track_items(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Devuelve GUID, posición, duración y fades de cada ítem sin modificarlo."""
+
+    return _call(
+        "get_track_items",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+
+
+@mcp.tool(
+    title="Inspeccionar envolvente de volumen",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def inspect_track_volume_envelope(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Lee puntos existentes; no crea ni muestra una envolvente nueva."""
+
+    return _call(
+        "inspect_track_volume_envelope",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+
+
+@mcp.tool(
+    title="Configurar fades de un ítem",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_item_fades(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    item_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fade_in_seconds: Annotated[float, Field(ge=0.0, le=30.0)],
+    fade_out_seconds: Annotated[float, Field(ge=0.0, le=30.0)],
+    fade_in_shape: Annotated[int, Field(ge=0, le=6)] = 0,
+    fade_out_shape: Annotated[int, Field(ge=0, le=6)] = 0,
+    fade_in_curve: Annotated[float, Field(ge=-1.0, le=1.0)] = 0.0,
+    fade_out_curve: Annotated[float, Field(ge=-1.0, le=1.0)] = 0.0,
+) -> dict[str, Any]:
+    """Aplica fades manuales por GUID y verifica todos los campos leídos."""
+
+    return _call(
+        "configure_item_fades",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "item_guid": item_guid,
+            "fade_in_seconds": fade_in_seconds,
+            "fade_out_seconds": fade_out_seconds,
+            "fade_in_shape": fade_in_shape,
+            "fade_out_shape": fade_out_shape,
+            "fade_in_curve": fade_in_curve,
+            "fade_out_curve": fade_out_curve,
+        },
+    )
+
+
+@mcp.tool(
     title="Crear pista en REAPER",
     annotations=ToolAnnotations(
         read_only_hint=False,
@@ -1140,7 +1210,8 @@ def add_stock_fx(
     project_ref: str,
     track_guid: str,
     fx_type: Literal[
-        "reacomp", "reaeq", "reagate", "reaxcomp", "reaverbate", "readelay"
+        "reacomp", "reaeq", "reagate", "reaxcomp", "reaverbate", "readelay",
+        "reatune"
     ],
 ) -> dict[str, Any]:
     """Agrega un procesador nativo permitido y verifica identidad y estado."""
@@ -1148,6 +1219,34 @@ def add_stock_fx(
     return _call(
         "add_stock_fx",
         {"project_ref": project_ref, "track_guid": track_guid, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Aplicar preset verificado de ReaTune",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_reatune_preset(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    preset_name: Annotated[str, Field(min_length=1, max_length=128)],
+) -> dict[str, Any]:
+    """Carga un preset explícito por nombre y confirma que ReaTune lo conservó."""
+
+    return _call(
+        "configure_reatune_preset",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "preset_name": preset_name,
+        },
     )
 
 

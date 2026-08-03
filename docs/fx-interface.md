@@ -13,7 +13,7 @@ Toda mutación requiere:
 - `fx_guid`: identidad estable de la instancia del efecto.
 
 `add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate`, `reaxcomp`,
-`reaverbate` y `readelay`. Cada alta comprueba que
+`reaverbate`, `readelay` y `reatune`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -25,6 +25,25 @@ permitidos, sin aceptar nombres arbitrarios provenientes del cerebro.
 
 ReaSynth sirve para validar de punta a punta que un MIDI produce sonido. No se
 considera una emulación de guitarra ni una decisión tímbrica de producción.
+
+## ReaTune mediante presets
+
+ReaTune no expone por la API estándar sus controles de tonalidad, escala, notas
+permitidas, ataque o algoritmo. `configure_reatune_preset` evita depender de
+chunks internos: recibe el GUID exacto de una instancia existente, acepta sólo
+un nombre explícito, lo carga mediante la API de presets y vuelve a leerlo. El
+prefijo `PampaPilot - ` es una convención recomendada, no una limitación. Un
+preset inexistente o una lectura distinta rechaza la transacción y restaura el
+estado anterior mediante undo.
+
+Esta estrategia adapta la operación genérica de presets observada en Total
+REAPER MCP y Bonfire REAPER MCP, ambos bajo licencia MIT, pero mantiene la
+validación, el allowlist y el contrato transaccional propios de PampaPilot.
+
+La integración se validó en REAPER 7.78/x64 sobre `Vocals`: la instancia
+ReaTune `{E3892131-7818-4612-AD5A-37BF75B49E54}` cargó el preset local
+`pampapilota#`; la lectura posterior conservó exactamente el mismo nombre, GUID,
+estado activo y online, con `state_verified: true`.
 
 ## ReaComp
 
@@ -125,6 +144,18 @@ confirmó 352,9 ms a 85 BPM, componente musical 0, feedback -25 dB, filtros
 200 Hz-6 kHz, width 0,8 y envío desde `Guitar` a -28 dB. Ambos routings fueron
 post-fader, estéreo, sin MIDI y `state_verified: true`. En cada prueba se
 retiraron envío y bus; el proyecto volvió a 14 pistas.
+
+## Edición de ítems y automatización
+
+`get_track_items` devuelve GUID, posición, duración y fades de cada ítem.
+`configure_item_fades` modifica únicamente el ítem exacto, valida duración,
+formas y curvaturas, y relee todos los campos. La operación es idempotente y
+queda dentro de una transacción undo.
+
+`inspect_track_volume_envelope` sólo consulta la envolvente `<VOLENV>` si ya
+existe. Esta primera etapa no crea ni sobrescribe automatización: la prueba en
+REAPER determinará si las pistas actuales ofrecen una envolvente utilizable sin
+recurrir a manipulación de chunks.
 
 ## Prueba real 0.5.1
 

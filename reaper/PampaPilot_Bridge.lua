@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.16.0"
+local BRIDGE_VERSION = "0.18.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -320,6 +320,7 @@ local function read_fx(track, fx_index, include_parameters)
   local guid = reaper.TrackFX_GetFXGUID(track, fx_index)
   if not name_ok or not name or name == "" then error("REAPER no devolvió el nombre del FX") end
   if not guid or guid == "" then error("REAPER no devolvió el GUID del FX") end
+  local preset_ok, preset_name = reaper.TrackFX_GetPreset(track, fx_index, "")
   local state = {
     index = fx_index,
     guid = guid,
@@ -327,6 +328,8 @@ local function read_fx(track, fx_index, include_parameters)
     enabled = reaper.TrackFX_GetEnabled(track, fx_index),
     offline = reaper.TrackFX_GetOffline(track, fx_index),
     parameter_count = reaper.TrackFX_GetNumParams(track, fx_index),
+    preset_available = preset_ok == true,
+    preset_name = preset_ok and (preset_name or "") or "",
   }
   if include_parameters then
     state.parameters = {}
@@ -770,6 +773,15 @@ local function require_reaxcomp(track, fx_index)
   return fx
 end
 
+local function require_reatune(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reatune", 1, true) then
+    error("el FX indicado no es ReaTune")
+  end
+  if not fx.enabled or fx.offline then error("ReaTune debe estar activo y online") end
+  return fx
+end
+
 local function require_reaverbate(track, fx_index)
   local fx = read_fx(track, fx_index, false)
   if not fx.name:lower():find("reaverbate", 1, true) then
@@ -1193,6 +1205,33 @@ local function read_imported_item(item, take)
   }
 end
 
+local function read_item_fades(item, item_index)
+  local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+  if not ok or guid == "" then error("REAPER no devolvió GUID del ítem") end
+  return {
+    guid = guid,
+    index = item_index,
+    position_seconds = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+    length_seconds = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+    fade_in_seconds = reaper.GetMediaItemInfo_Value(item, "D_FADEINLEN"),
+    fade_out_seconds = reaper.GetMediaItemInfo_Value(item, "D_FADEOUTLEN"),
+    fade_in_shape = reaper.GetMediaItemInfo_Value(item, "C_FADEINSHAPE"),
+    fade_out_shape = reaper.GetMediaItemInfo_Value(item, "C_FADEOUTSHAPE"),
+    fade_in_curve = reaper.GetMediaItemInfo_Value(item, "D_FADEINDIR"),
+    fade_out_curve = reaper.GetMediaItemInfo_Value(item, "D_FADEOUTDIR"),
+  }
+end
+
+local function find_track_item_by_guid(track, item_guid)
+  require_string(item_guid, "item_guid", 64)
+  for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+    local item = reaper.GetTrackMediaItem(track, item_index)
+    local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+    if ok and guid == item_guid then return item, item_index end
+  end
+  error("no existe un ítem con el GUID indicado en la pista")
+end
+
 local function snapshot_item_timing(project)
   local snapshot = {}
   for index = 0, reaper.CountMediaItems(project) - 1 do
@@ -1597,6 +1636,107 @@ function ACTIONS.get_track_state(params, _)
   }, observations(true)
 end
 
+function ACTIONS.get_track_items(params, _)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local items = {}
+  for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+    items[#items + 1] = read_item_fades(
+      reaper.GetTrackMediaItem(track, item_index), item_index)
+  end
+  return { project_ref = ref, track_guid = params.track_guid, items = items }, observations(true)
+end
+
+function ACTIONS.inspect_track_volume_envelope(params, _)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local envelope = reaper.GetTrackEnvelopeByChunkName(track, "<VOLENV")
+  if not envelope then
+    return {
+      project_ref = ref,
+      track_guid = params.track_guid,
+      present = false,
+      points = {},
+    }, observations(true)
+  end
+  local point_count = reaper.CountEnvelopePoints(envelope)
+  if point_count > 4096 then error("la envolvente supera el límite de puntos legibles") end
+  local scaling_mode = reaper.GetEnvelopeScalingMode(envelope)
+  local points = {}
+  for point_index = 0, point_count - 1 do
+    local ok, time, value, shape, tension, selected = reaper.GetEnvelopePoint(
+      envelope, point_index)
+    if not ok then error("REAPER no pudo leer un punto de envolvente") end
+    local amplitude = reaper.ScaleFromEnvelopeMode(scaling_mode, value)
+    points[#points + 1] = {
+      index = point_index,
+      time_seconds = time,
+      value = value,
+      volume_db = amplitude_to_db(amplitude),
+      shape = shape,
+      tension = tension,
+      selected = selected,
+    }
+  end
+  return {
+    project_ref = ref,
+    track_guid = params.track_guid,
+    present = true,
+    scaling_mode = scaling_mode,
+    points = points,
+  }, observations(true)
+end
+
+function ACTIONS.configure_item_fades(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local item, item_index = find_track_item_by_guid(track, params.item_guid)
+  local fade_in_seconds = require_number(
+    params.fade_in_seconds, "fade_in_seconds", 0.0, 30.0)
+  local fade_out_seconds = require_number(
+    params.fade_out_seconds, "fade_out_seconds", 0.0, 30.0)
+  local fade_in_shape = require_integer(params.fade_in_shape, "fade_in_shape", 0, 6)
+  local fade_out_shape = require_integer(params.fade_out_shape, "fade_out_shape", 0, 6)
+  local fade_in_curve = require_number(params.fade_in_curve, "fade_in_curve", -1.0, 1.0)
+  local fade_out_curve = require_number(params.fade_out_curve, "fade_out_curve", -1.0, 1.0)
+  local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+  if fade_in_seconds + fade_out_seconds > length then
+    error("la suma de fades supera la duración del ítem")
+  end
+  local result = run_transaction(project, request_id, "configurar fades de ítem", function()
+    local fields = {
+      {"D_FADEINLEN", fade_in_seconds},
+      {"D_FADEOUTLEN", fade_out_seconds},
+      {"C_FADEINSHAPE", fade_in_shape},
+      {"C_FADEOUTSHAPE", fade_out_shape},
+      {"D_FADEINDIR", fade_in_curve},
+      {"D_FADEOUTDIR", fade_out_curve},
+    }
+    for _, field in ipairs(fields) do
+      if not reaper.SetMediaItemInfo_Value(item, field[1], field[2]) then
+        error("REAPER rechazó " .. field[1])
+      end
+    end
+    reaper.UpdateItemInProject(item)
+    local state = read_item_fades(item, item_index)
+    local expected = {
+      fade_in_seconds = fade_in_seconds,
+      fade_out_seconds = fade_out_seconds,
+      fade_in_shape = fade_in_shape,
+      fade_out_shape = fade_out_shape,
+      fade_in_curve = fade_in_curve,
+      fade_out_curve = fade_out_curve,
+    }
+    for name, value in pairs(expected) do
+      if math.abs(state[name] - value) > 0.000001 then
+        error("la lectura posterior no coincide para " .. name)
+      end
+    end
+    return { project_ref = ref, item = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
 function ACTIONS.create_track(params, request_id)
   local project, _, ref = require_project(params)
   local name = require_string(params.name, "name", 128)
@@ -1886,6 +2026,8 @@ function ACTIONS.add_stock_fx(params, request_id)
     plugin_name, expected_name, description = "ReaVerbate (Cockos)", "reaverbate", "agregar ReaVerbate"
   elseif fx_type == "readelay" then
     plugin_name, expected_name, description = "ReaDelay (Cockos)", "readelay", "agregar ReaDelay"
+  elseif fx_type == "reatune" then
+    plugin_name, expected_name, description = "ReaTune (Cockos)", "reatune", "agregar ReaTune"
   else
     error("FX nativo no permitido")
   end
@@ -1915,6 +2057,40 @@ function ACTIONS.add_stock_fx(params, request_id)
   return result, observations(true)
 end
 
+function ACTIONS.configure_reatune_preset(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local preset_name = require_string(params.preset_name, "preset_name", 128)
+  local fx_index = find_fx_by_guid(track, fx_guid)
+  require_reatune(track, fx_index)
+
+  local result = run_transaction(
+    project, request_id, "aplicar preset ReaTune verificado", function()
+      if not reaper.TrackFX_SetPreset(track, fx_index, preset_name) then
+        error("REAPER no encontró el preset ReaTune solicitado")
+      end
+      local preset_ok, observed_name = reaper.TrackFX_GetPreset(track, fx_index, "")
+      if not preset_ok or observed_name ~= preset_name then
+        error("la lectura posterior no confirmó el preset ReaTune solicitado")
+      end
+      local observed_fx_index = find_fx_by_guid(track, fx_guid)
+      local observed_fx = require_reatune(track, observed_fx_index)
+      if not observed_fx.preset_available or observed_fx.preset_name ~= preset_name then
+        error("el estado final de ReaTune no conserva el preset solicitado")
+      end
+      return {
+        project_ref = ref,
+        track = read_track(track, index),
+        fx = observed_fx,
+        preset_name = observed_name,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
+end
+
 function ACTIONS.remove_track_fx(params, request_id)
   local project, _, ref = require_project(params)
   local track, index = find_track_by_guid(project, params.track_guid)
@@ -1925,7 +2101,8 @@ function ACTIONS.remove_track_fx(params, request_id)
   if not lower_name:find("reagate", 1, true)
       and not lower_name:find("reaxcomp", 1, true)
       and not lower_name:find("reaverbate", 1, true)
-      and not lower_name:find("readelay", 1, true) then
+      and not lower_name:find("readelay", 1, true)
+      and not lower_name:find("reatune", 1, true) then
     error("el FX no pertenece al conjunto removible permitido")
   end
   local before_count = reaper.TrackFX_GetCount(track)

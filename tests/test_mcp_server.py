@@ -22,6 +22,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
+                "get_track_items",
+                "inspect_track_volume_envelope",
+                "configure_item_fades",
                 "create_track",
                 "set_track_pan",
                 "set_track_volume",
@@ -30,6 +33,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_listening_preparation",
                 "apply_track_mix_batch",
                 "add_stock_fx",
+                "configure_reatune_preset",
                 "remove_track_fx",
                 "create_effect_bus",
                 "configure_ambience_fx",
@@ -84,6 +88,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.destructive_hint)
+        self.assertTrue(tools["get_track_items"].annotations.read_only_hint)
+        self.assertTrue(tools["inspect_track_volume_envelope"].annotations.read_only_hint)
+        self.assertTrue(tools["configure_item_fades"].annotations.idempotent_hint)
+        self.assertFalse(tools["configure_item_fades"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
         self.assertTrue(tools["set_track_volume"].annotations.idempotent_hint)
         self.assertTrue(tools["set_track_mute"].annotations.idempotent_hint)
@@ -94,6 +102,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["apply_track_mix_batch"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
+        self.assertTrue(tools["configure_reatune_preset"].annotations.idempotent_hint)
+        self.assertFalse(tools["configure_reatune_preset"].annotations.destructive_hint)
         self.assertFalse(tools["remove_track_fx"].annotations.destructive_hint)
         self.assertFalse(tools["remove_track_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["create_effect_bus"].annotations.idempotent_hint)
