@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 from typing import Any, Mapping
@@ -46,6 +47,24 @@ def default_ipc_root() -> Path:
     configured = os.environ.get("PAMPAPILOT_IPC_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
+    workspace_config = (
+        Path(__file__).resolve().parents[2]
+        / "reaper"
+        / "bridge_config.local.json"
+    )
+    if workspace_config.is_file():
+        try:
+            decoded = json.loads(workspace_config.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"no se pudo leer la configuración del Bridge: {workspace_config}"
+            ) from exc
+        ipc_root = decoded.get("ipc_root") if isinstance(decoded, dict) else None
+        if not isinstance(ipc_root, str) or not ipc_root.strip():
+            raise RuntimeError(
+                f"bridge_config.local.json no contiene ipc_root válido: {workspace_config}"
+            )
+        return Path(ipc_root).expanduser().resolve()
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if not appdata:
