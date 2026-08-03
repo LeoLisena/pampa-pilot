@@ -1,0 +1,26 @@
+id: mixing.mono-compatibility-analysis
+title: Evaluación conservadora de compatibilidad mono
+thresholds:
+  active_block_dbfs: -60.0
+  median_retention_warning_db: -6.0
+  median_retention_severe_db: -9.0
+  p10_retention_warning_db: -12.0
+  severe_block_retention_db: -10.0
+  severe_block_ratio_warning: 0.15
+  severe_block_ratio_severe: 0.35
+  band_retention_warning_db: -10.0
+  minimum_band_energy_ratio: 0.05
+recommendations:
+  review:
+    width_audition_range_percent: [85, 95]
+  severe:
+    width_audition_range_percent: [70, 90]
+limitations:
+  - La pérdida energética no demuestra que el cambio tímbrico sea audible dentro del mix.
+  - Material estéreo ambiental puede conservarse ancho aunque cambie al sumar a mono.
+  - Reducir ancho no repara todas las relaciones de fase y siempre requiere escucha.
+sources:
+  - title: Requisito de compatibilidad mono del flujo PampaPilot
+    kind: user_requirement
+confidence: working_policy
+reviewed_at: 2026-08-03

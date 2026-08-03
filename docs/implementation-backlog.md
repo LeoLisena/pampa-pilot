@@ -108,7 +108,10 @@ Referencias de diseño para carga genérica de presets:
 ### Modulación y doblaje
 
 - [ ] Chorus/doubler para voces, guitarras y cuerdas.
-- [ ] Control de mezcla, ancho y compatibilidad mono.
+- [x] Análisis de compatibilidad mono por bloques y bandas, sin usar correlación
+      como veredicto ni reducir ancho automáticamente.
+- [ ] Control verificable de ancho estéreo y A/B mono, sólo para informes que
+      recomienden una audición.
 - [ ] Evitar modulación rutinaria en stems de Suno ya procesados.
 
 ## Mezcla y edición pendientes

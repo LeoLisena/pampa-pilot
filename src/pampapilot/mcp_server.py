@@ -41,6 +41,7 @@ from .mastering_proposal import (
     build_mastering_application_payload,
     build_mastering_proposal,
 )
+from .mono_compatibility import analyze_mono_compatibility
 from .midi_cleanup import (
     CleanupConfig,
     analyze_midi_file,
@@ -291,6 +292,20 @@ def preview_audio_integrity(
 
     audio_path = resolve_input_file(file_path, suffixes={".wav"})
     return analyze_audio_integrity(audio_path, source_kind)
+
+
+@mcp.tool(
+    title="Evaluar compatibilidad mono de un stem",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_mono_compatibility(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+) -> dict[str, Any]:
+    """Mide cancelación temporal y por bandas; no modifica audio ni REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
+    return analyze_mono_compatibility(audio_path, source_kind)
 
 
 @mcp.tool(

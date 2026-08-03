@@ -46,10 +46,15 @@ REAPER y produjo:
 
 - cero duplicados exactos;
 - un hallazgo de prioridad media: correlación estéreo negativa en
-  `Backing Vocals`, que requiere comprobación mono;
+  `Backing Vocals`, derivado correctamente a comprobación mono;
 - ocho pares de similitud espectral para revisión, todos marcados como
   candidatos de baja confianza y no como enmascaramiento demostrado.
 
 Los pares principales fueron Synth/Guitar, variantes de Drums y Bass/Drums. El
 resultado es coherente con la política conservadora: no recomendó compresión ni
 EQ por rutina sobre los stems generados.
+
+La comprobación especializada posterior midió la cancelación por tiempo y por
+bandas. Clasificó `Backing Vocals` como compatible y devolvió
+`no_change_recommended`; la correlación negativa no produjo por sí sola una
+reducción de ancho.

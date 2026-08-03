@@ -28,6 +28,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "preview_song_structure",
                 "apply_project_song_structure",
                 "preview_audio_integrity",
+                "preview_mono_compatibility",
                 "preview_project_item_audio_integrity",
                 "get_render_settings",
                 "get_master_track_state",
@@ -113,6 +114,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
             tools["preview_project_track_producer_chain"].annotations.read_only_hint
         )
         self.assertTrue(tools["preview_audio_integrity"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_mono_compatibility"].annotations.read_only_hint)
         self.assertTrue(
             tools["preview_project_item_audio_integrity"].annotations.read_only_hint
         )

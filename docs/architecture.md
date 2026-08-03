@@ -92,6 +92,13 @@ podrá usar el mismo catálogo. Los modelos musicales especializados serán
 consultores de sólo lectura y entregarán propuestas al orquestador, nunca cambios
 directos en REAPER.
 
+Los cálculos de señal, reglas versionadas, límites, identificadores de
+aprobación y verificaciones son deterministas y no dependen del proveedor del
+LLM. Un cerebro menos capaz aún puede interpretar peor una intención; por eso
+las rutas de productor codifican el siguiente paso permitido y el núcleo rechaza
+acciones incoherentes. El cerebro coordina y explica, pero no sustituye las
+garantías del motor.
+
 Los especialistas también se separan por dominio: ASR/alineación aporta texto y
 timing de frases; pitch, notas, dinámica y timbre pertenecen a analizadores de
 performance musical. Sus artefactos son intercambiables y el backend de cómputo

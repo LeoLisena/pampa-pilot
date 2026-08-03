@@ -22,7 +22,7 @@ _ROUTES: dict[str, dict[str, Any]] = {
     },
     "stereo.negative_correlation": {
         "category": "translation",
-        "next_stage": "mono_compatibility_check",
+        "next_stage": "preview_mono_compatibility",
         "processor": None,
         "priority": 75,
         "reason": "Mono rendering must confirm a real cancellation problem first.",

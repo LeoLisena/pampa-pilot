@@ -111,6 +111,9 @@ La estrategia híbrida de procesamiento por stem está en
 [docs/song-processing-strategy.md](docs/song-processing-strategy.md).
 El diagnóstico ahora enlaza cada problema observado con el siguiente analizador
 o filtro candidato, conservando una política especialmente cauta para Suno.
+La compatibilidad mono se verifica por bloques y bandas antes de sugerir cambios
+de ancho; una correlación negativa aislada no autoriza procesamiento. Véase
+[docs/mono-compatibility.md](docs/mono-compatibility.md).
 El análisis temporal reutilizable está en
 [docs/timeline-analysis.md](docs/timeline-analysis.md) y su aplicación a
 secciones en [docs/song-structure.md](docs/song-structure.md).
