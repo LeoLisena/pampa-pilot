@@ -94,7 +94,7 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "get_track_items",
             False,
             VerificationLevel.STATE,
-            "Lee GUID, posición, duración y fades de los ítems de una pista.",
+            "Lee GUID, edición, fades y fuente de la toma activa de cada ítem.",
         ),
         ActionSpec(
             "inspect_track_volume_envelope",

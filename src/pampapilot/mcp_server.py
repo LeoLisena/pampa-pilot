@@ -12,6 +12,7 @@ from .ambience_proposal import (
     build_ambience_application_payload,
     propose_ambience as build_ambience_proposal,
 )
+from .audio_integrity import analyze_audio_integrity
 from .bridge_client import BridgeClient
 from .deesser_proposal import (
     build_deesser_application_payload,
@@ -240,6 +241,55 @@ def preview_vocal_rider_proposal(
 
     audio_path = resolve_input_file(file_path, suffixes={".wav"})
     return build_vocal_rider_proposal(audio_path, source_kind)
+
+
+@mcp.tool(
+    title="Revisar integridad técnica de un WAV",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_audio_integrity(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+) -> dict[str, Any]:
+    """Detecta límites duros, impulsos, silencios y clipping sin modificar audio."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return analyze_audio_integrity(audio_path, source_kind)
+
+
+@mcp.tool(
+    title="Revisar integridad del audio usado por un ítem",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_project_item_audio_integrity(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    item_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+) -> dict[str, Any]:
+    """Cruza el WAV con offset, playrate, duración y fades leídos de REAPER."""
+
+    reply = _call(
+        "get_track_items",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+    items = reply["result"].get("items", [])
+    item = next((value for value in items if value.get("guid") == item_guid), None)
+    if item is None:
+        raise ValueError("the requested item GUID is not on the requested track")
+    take = item.get("take")
+    if not isinstance(take, Mapping) or not take.get("source_path"):
+        raise ValueError("the requested item has no file-backed active audio take")
+    audio_path = resolve_input_file(str(take["source_path"]), suffixes={".wav"})
+    report = analyze_audio_integrity(
+        audio_path,
+        source_kind,
+        item_context=item,
+    )
+    report["reaper_state_observations"] = reply["observations"]
+    report["project_ref"] = project_ref
+    report["track_guid"] = track_guid
+    return report
 
 
 @mcp.tool(
@@ -1019,14 +1069,14 @@ def get_track_state(project_ref: str, track_guid: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    title="Leer ítems y fades de una pista",
+    title="Leer ítems, fades y tomas de una pista",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 def get_track_items(
     project_ref: str,
     track_guid: Annotated[str, Field(min_length=1, max_length=64)],
 ) -> dict[str, Any]:
-    """Devuelve GUID, posición, duración y fades de cada ítem sin modificarlo."""
+    """Devuelve edición y fuente activa de cada ítem sin modificarlo."""
 
     return _call(
         "get_track_items",

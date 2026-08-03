@@ -114,7 +114,12 @@ Referencias de diseño para carga genérica de presets:
 - [ ] Sidechain verificable para ducking de bajo/bombo y voz/instrumentación.
 - [ ] Procesamiento paralelo con buses y compensación de nivel.
 - [ ] Alineación temporal y de fase entre micrófonos o tomas relacionadas.
-- [ ] Detección de clics, cortes, silencios anómalos y colas truncadas.
+- [x] Detección conservadora de límites duros, impulsos, silencios internos,
+      clipping y colas activas, ligada por SHA-256 al rango usado por el ítem.
+- [x] Validar en vivo el contexto enriquecido de ítem del puente 0.22.0 sobre
+      `Guitar`, incluyendo ruta, offset, playrate, duración, loop y fades.
+- [ ] Audicionar candidatos detectados sobre grabaciones orgánicas reales y
+      calibrar umbrales antes de habilitar cualquier reparación.
 - [ ] Encadenado de tratamientos por rol con orden explícito de FX.
 - [ ] Comparación A/B con loudness igualado y restauración exacta del estado.
 

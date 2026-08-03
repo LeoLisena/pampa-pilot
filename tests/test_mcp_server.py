@@ -22,6 +22,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_fx_parameter_domain",
                 "preview_saturation_proposal",
                 "preview_vocal_rider_proposal",
+                "preview_audio_integrity",
+                "preview_project_item_audio_integrity",
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
@@ -92,6 +94,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_fx_parameter_domain"].annotations.read_only_hint)
         self.assertTrue(tools["preview_saturation_proposal"].annotations.read_only_hint)
         self.assertTrue(tools["preview_vocal_rider_proposal"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_audio_integrity"].annotations.read_only_hint)
+        self.assertTrue(
+            tools["preview_project_item_audio_integrity"].annotations.read_only_hint
+        )
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)

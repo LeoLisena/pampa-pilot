@@ -187,10 +187,25 @@ retiraron envío y bus; el proyecto volvió a 14 pistas.
 
 ## Edición de ítems y automatización
 
-`get_track_items` devuelve GUID, posición, duración y fades de cada ítem.
+Desde el puente 0.22.0, `get_track_items` devuelve GUID, posición, duración,
+fades y también la toma activa: archivo fuente, tipo, longitud, canales, sample
+rate, offset, playrate y preservación de tono.
 `configure_item_fades` modifica únicamente el ítem exacto, valida duración,
 formas y curvaturas, y relee todos los campos. La operación es idempotente y
 queda dentro de una transacción undo.
+
+`preview_audio_integrity` analiza un WAV completo. La variante
+`preview_project_item_audio_integrity` obtiene primero los datos anteriores de
+REAPER, verifica que la ruta coincida y analiza únicamente el rango de fuente
+reproducido por el ítem. Ambas son de sólo lectura y ligan el resultado al
+SHA-256 del archivo.
+
+El detector busca límites alejados de cero, energía en los últimos 20 ms,
+saltos impulsivos aislados, silencios internos prolongados y clipping plano.
+Para Suno, silencios y transientes se registran sólo como observaciones; para
+audio orgánico se recomienda revisión. Un fade sugerido nunca es automático y
+una cola activa se informa como riesgo, porque un fade no recupera audio que
+falte.
 
 `inspect_track_volume_envelope` sólo consulta la envolvente `<VOLENV>` si ya
 existe; nunca la crea ni modifica. La escritura se mantiene como una acción

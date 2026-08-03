@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.21.0"
+local BRIDGE_VERSION = "0.22.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -1282,6 +1282,7 @@ local function read_imported_item(item, take)
     guid = item_guid,
     position_seconds = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
     length_seconds = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+    loop_source = reaper.GetMediaItemInfo_Value(item, "B_LOOPSRC") ~= 0,
     timebase = reaper.GetMediaItemInfo_Value(item, "C_BEATATTACHMODE"),
     auto_stretch = reaper.GetMediaItemInfo_Value(item, "C_AUTOSTRETCH") ~= 0,
     take = {
@@ -1299,17 +1300,43 @@ end
 local function read_item_fades(item, item_index)
   local ok, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
   if not ok or guid == "" then error("REAPER no devolvió GUID del ítem") end
+  local take = reaper.GetActiveTake(item)
+  local take_state = nil
+  if take then
+    local take_ok, take_guid = reaper.GetSetMediaItemTakeInfo_String(
+      take, "GUID", "", false)
+    if not take_ok or take_guid == "" then
+      error("REAPER no devolvió GUID de la toma activa")
+    end
+    local source = reaper.GetMediaItemTake_Source(take)
+    if not source then error("la toma activa no tiene fuente") end
+    local source_length, length_is_qn = reaper.GetMediaSourceLength(source)
+    take_state = {
+      guid = take_guid,
+      source_path = reaper.GetMediaSourceFileName(source),
+      source_type = reaper.GetMediaSourceType(source),
+      source_length = source_length,
+      source_length_is_quarter_notes = length_is_qn == true,
+      sample_rate = reaper.GetMediaSourceSampleRate(source),
+      channels = reaper.GetMediaSourceNumChannels(source),
+      start_offset_seconds = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS"),
+      playrate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE"),
+      preserve_pitch = reaper.GetMediaItemTakeInfo_Value(take, "B_PPITCH") ~= 0,
+    }
+  end
   return {
     guid = guid,
     index = item_index,
     position_seconds = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
     length_seconds = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+    loop_source = reaper.GetMediaItemInfo_Value(item, "B_LOOPSRC") ~= 0,
     fade_in_seconds = reaper.GetMediaItemInfo_Value(item, "D_FADEINLEN"),
     fade_out_seconds = reaper.GetMediaItemInfo_Value(item, "D_FADEOUTLEN"),
     fade_in_shape = reaper.GetMediaItemInfo_Value(item, "C_FADEINSHAPE"),
     fade_out_shape = reaper.GetMediaItemInfo_Value(item, "C_FADEOUTSHAPE"),
     fade_in_curve = reaper.GetMediaItemInfo_Value(item, "D_FADEINDIR"),
     fade_out_curve = reaper.GetMediaItemInfo_Value(item, "D_FADEOUTDIR"),
+    take = take_state,
   }
 end
 

@@ -68,6 +68,10 @@ interno y diferencia puntos de partida para Suno, fuentes orgánicas y desconoci
 El puente 0.21.0 agrega vocal riding por regiones para voces orgánicas: liga la
 propuesta al WAV y al ítem exactos, escribe sólo sobre una envolvente libre y
 relee cada punto. Los stems vocales de Suno se analizan pero no se automatizan.
+El puente 0.22.0 amplía la lectura de ítems con fuente, offset y playrate. El
+motor puede así revisar límites duros, impulsos, silencios internos, clipping y
+colas activas exactamente en el tramo usado por REAPER. Sólo propone revisión;
+no corta ni repara audio automáticamente.
 
 ## Decisiones iniciales
 
@@ -104,6 +108,8 @@ El diagnóstico híbrido de stems está en
 [docs/song-diagnosis.md](docs/song-diagnosis.md).
 El cruce con el estado real de REAPER está en
 [docs/production-plan.md](docs/production-plan.md).
+El detector conservador de clics, silencios y bordes está en
+[docs/research/audio-integrity-adapter.md](docs/research/audio-integrity-adapter.md).
 
 ## Entorno Python reproducible
 
