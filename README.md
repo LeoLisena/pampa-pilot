@@ -183,8 +183,10 @@ carpetas. La configuración del cerebro admite LM Studio con token requerido de
 forma predeterminada y un modo sin autenticación para una red confiable.
 El botón **Modo compacto** abre la misma interfaz como ventana web always-on-top
 abajo a la derecha, conserva la canción activa y permite operar el chat mientras
-REAPER permanece visible. El historial visible se comparte por canción entre la
-ventana completa y la compacta. El selector de razonamiento permite usar modo
+REAPER permanece visible. El historial visible y el modo de razonamiento se
+guardan en el servidor local y se comparten por canción entre la ventana
+completa y la compacta, incluso si usan perfiles de navegador distintos. El
+selector de razonamiento permite usar modo
 automático, rápido sin razonamiento o profundo; esta elección sólo configura al
 proveedor activo y no forma parte del contrato de acciones de REAPER.
 

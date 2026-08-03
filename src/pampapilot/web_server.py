@@ -107,6 +107,10 @@ class ChatInput(BaseModel):
     reasoning_mode: Literal["auto", "fast", "deep"] = "auto"
 
 
+class ReasoningModeInput(BaseModel):
+    reasoning_mode: Literal["auto", "fast", "deep"]
+
+
 class ProposalDecision(BaseModel):
     decision: Literal["preview", "apply", "reject"]
 
@@ -359,6 +363,55 @@ class RuntimeState:
 runtime = RuntimeState()
 app = FastAPI(title="PampaPilot", version="0.1.0")
 app.mount("/assets", StaticFiles(directory=WEB_ROOT), name="assets")
+CHAT_STATE_PATH = WORKSPACE_ROOT / ".runtime" / "web-chat-state.json"
+CHAT_STATE_LOCK = RLock()
+
+
+def _read_chat_state() -> dict[str, Any]:
+    with CHAT_STATE_LOCK:
+        try:
+            decoded = json.loads(CHAT_STATE_PATH.read_text(encoding="utf-8-sig"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return {"reasoning_mode": "auto", "projects": {}}
+        return dict(decoded) if isinstance(decoded, dict) else {"reasoning_mode": "auto", "projects": {}}
+
+
+def _write_chat_state(value: dict[str, Any]) -> None:
+    with CHAT_STATE_LOCK:
+        CHAT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = CHAT_STATE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(CHAT_STATE_PATH)
+
+
+def _chat_state_for_project(project_name: str) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects", {})
+    history = projects.get(project_name, []) if isinstance(projects, dict) else []
+    if not isinstance(history, list):
+        history = []
+    return {
+        "reasoning_mode": state.get("reasoning_mode", "auto"),
+        "history": [item for item in history if isinstance(item, dict)][-100:],
+    }
+
+
+def _record_chat_exchange(project_name: str, user_message: str, response: dict[str, Any]) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects")
+    projects = dict(projects) if isinstance(projects, dict) else {}
+    history = projects.get(project_name, [])
+    history = list(history) if isinstance(history, list) else []
+    history.extend(
+        [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": str(response.get("message", ""))},
+        ]
+    )
+    projects[project_name] = history[-100:]
+    state["projects"] = projects
+    _write_chat_state(state)
+    return response
 
 
 def _validate_song_name(value: str) -> str:
@@ -1343,6 +1396,22 @@ async def configure_brain(value: BrainSettingsInput) -> dict[str, Any]:
     return {**runtime.public_brain(), "status": await _lm_status()}
 
 
+@app.get("/api/projects/{project_name}/chat-state")
+def get_project_chat_state(project_name: str) -> dict[str, Any]:
+    try:
+        return _chat_state_for_project(_validate_song_name(project_name))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/chat/reasoning")
+def set_chat_reasoning(value: ReasoningModeInput) -> dict[str, Any]:
+    state = _read_chat_state()
+    state["reasoning_mode"] = value.reasoning_mode
+    _write_chat_state(state)
+    return {"reasoning_mode": value.reasoning_mode}
+
+
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     lm, bridge = await asyncio.gather(_lm_status(), _bridge_status())
@@ -2232,11 +2301,11 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                         "reaper_modified": False,
                     }
                 )
-                return response
+                return _record_chat_exchange(project_name, value.message, response)
             except Exception as exc:
                 response["message"] = f"{response['message']}\n\nNo pude completar el análisis: {exc}"
                 response["proposal"] = None
-                return response
+                return _record_chat_exchange(project_name, value.message, response)
         try:
             plan = await asyncio.to_thread(_build_chat_action_plan, project_name, actions)
         except Exception as exc:
@@ -2245,7 +2314,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             )
             response["proposal"] = None
             response["action_error"] = str(exc)
-            return response
+            return _record_chat_exchange(project_name, value.message, response)
         proposal_id = runtime.add_proposal(plan, executable=True)
         stored = {**plan, "proposal_id": proposal_id, "status": "pending"}
         approval_mode = runtime.approval_mode()
@@ -2293,7 +2362,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 "status": "pending",
                 "executable": False,
             }
-    return response
+    return _record_chat_exchange(project_name, value.message, response)
 
 
 @app.post("/api/proposals/{proposal_id}/decision")

@@ -19,7 +19,17 @@ from pampapilot.web_server import (
 
 class WebServerTests(unittest.TestCase):
     def setUp(self):
+        self._chat_directory = TemporaryDirectory()
+        self._chat_path_patch = patch(
+            "pampapilot.web_server.CHAT_STATE_PATH",
+            Path(self._chat_directory.name) / "web-chat-state.json",
+        )
+        self._chat_path_patch.start()
         self.client = TestClient(app)
+
+    def tearDown(self):
+        self._chat_path_patch.stop()
+        self._chat_directory.cleanup()
 
     def test_serves_application_shell(self):
         response = self.client.get("/")
@@ -40,6 +50,15 @@ class WebServerTests(unittest.TestCase):
         self.assertTrue(response.json()["authentication_required"])
         self.assertEqual(response.json()["timeout_seconds"], 180.0)
         self.assertIn("token_persisted", response.json())
+
+    def test_chat_state_is_shared_by_server(self):
+        reasoning = self.client.put(
+            "/api/chat/reasoning", json={"reasoning_mode": "deep"}
+        )
+        self.assertEqual(reasoning.status_code, 200)
+        state = self.client.get("/api/projects/Mi%20Peque%C3%B1o%20Sol/chat-state")
+        self.assertEqual(state.status_code, 200)
+        self.assertEqual(state.json(), {"reasoning_mode": "deep", "history": []})
 
     def test_capability_map_is_available_without_reaper(self):
         response = self.client.get("/api/capabilities")

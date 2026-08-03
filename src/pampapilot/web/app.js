@@ -59,6 +59,27 @@ function renderChatHistory() {
   state.history.forEach(item => addMessage(item.role, item.content));
 }
 
+async function refreshSharedChatState() {
+  const projectName = state.project?.name;
+  if (!projectName) return;
+  try {
+    const shared = await api(`/api/projects/${encodeURIComponent(projectName)}/chat-state`);
+    if (state.project?.name !== projectName) return;
+    const history = Array.isArray(shared.history) ? shared.history : [];
+    const currentSignature = JSON.stringify(state.history);
+    const sharedSignature = JSON.stringify(history);
+    if (currentSignature !== sharedSignature) {
+      state.history = history;
+      renderChatHistory();
+      localStorage.setItem(chatHistoryKey(projectName), sharedSignature);
+    }
+    if (document.activeElement !== $('#reasoning-mode') && ['auto', 'fast', 'deep'].includes(shared.reasoning_mode)) {
+      $('#reasoning-mode').value = shared.reasoning_mode;
+      localStorage.setItem('pampapilot.reasoningMode', shared.reasoning_mode);
+    }
+  } catch { /* The local cache remains available while the server restarts. */ }
+}
+
 async function refreshStatus() {
   try {
     const result = await api('/api/status');
@@ -86,6 +107,7 @@ function renderProject(project) {
   }
   state.project = project;
   if (projectChanged) renderChatHistory();
+  refreshSharedChatState();
   localStorage.setItem('pampapilot.activeProject', project.name);
   if (compactMode) document.title = `PampaPilot Compacto - ${project.name}`;
   $('#project-title').textContent = project.name;
@@ -361,6 +383,7 @@ $('#chat-form').addEventListener('submit', async event => {
     addMessage('assistant', result.message);
     state.history.push({role: 'user', content: message}, {role: 'assistant', content: result.message});
     saveChatHistory();
+    refreshSharedChatState();
     renderProposal(result.proposal);
     if (result.proposal?.status === 'applied') {
       const application = result.proposal.application || {};
@@ -378,8 +401,13 @@ $('#chat-form').addEventListener('submit', async event => {
 });
 
 $('#reasoning-mode').value = ['auto', 'fast', 'deep'].includes(savedReasoningMode) ? savedReasoningMode : 'auto';
-$('#reasoning-mode').addEventListener('change', event => {
+$('#reasoning-mode').addEventListener('change', async event => {
   localStorage.setItem('pampapilot.reasoningMode', event.currentTarget.value);
+  try {
+    await api('/api/chat/reasoning', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reasoning_mode: event.currentTarget.value})
+    });
+  } catch (error) { toast(error.message); }
 });
 
 window.addEventListener('storage', event => {
@@ -387,6 +415,8 @@ window.addEventListener('storage', event => {
   state.history = loadChatHistory(state.project.name);
   renderChatHistory();
 });
+window.addEventListener('focus', refreshSharedChatState);
+window.setInterval(refreshSharedChatState, 2000);
 
 $('#chat-input').addEventListener('keydown', event => {
   if (
