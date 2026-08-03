@@ -72,6 +72,8 @@ que REAPER lo conservó, sin depender de parámetros internos no expuestos.
   recomiendan acciones.
 
 La arquitectura y sus límites están en [docs/architecture.md](docs/architecture.md).
+El estado completo de filtros y funciones pendientes se mantiene en
+[docs/implementation-backlog.md](docs/implementation-backlog.md).
 El primer recorrido verificable está en [docs/mvp.md](docs/mvp.md).
 La limpieza reutilizable de MIDI contra un stem está en
 [docs/midi-cleanup.md](docs/midi-cleanup.md).

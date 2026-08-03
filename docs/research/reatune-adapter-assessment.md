@@ -28,6 +28,12 @@ identificada por GUID y `TrackFX_GetPreset` devolvió exactamente el mismo nombr
 Esto verifica el control de estado del preset, no la calidad perceptual de la
 afinación, que continúa requiriendo escucha.
 
+El preset local quedó almacenado en `presets/vst-reatune.ini` como un bloque
+hexadecimal de 198 bytes que incluye el nombre del preset. Esto demuestra que el
+estado no expuesto está serializado, pero un único bloque no permite atribuir
+bytes concretos a tonalidad, escala o ataque. La segunda etapa usará capturas
+diferenciales automatizadas y copias de respaldo antes de generar presets.
+
 Alternativas futuras adicionales:
 
 1. integrar un plugin de afinación que exponga tonalidad, escala y velocidad;
