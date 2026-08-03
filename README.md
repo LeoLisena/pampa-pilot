@@ -31,8 +31,10 @@ valores se vuelven a leer dentro de una única transacción reversible.
 Desde el puente 0.7.0 se separan además instrumentos de efectos: `add_instrument` admite
 inicialmente ReaSynth y comprueba que REAPER lo registre realmente como VSTi de
 la pista, sin acoplar la interfaz a nombres arbitrarios de plugins.
-El puente 0.8.0 aplica una propuesta aprobada completa en una sola transacción,
+El puente 0.9.1 aplica una propuesta aprobada completa en una sola transacción,
 reutiliza FX mediante GUID explícitos y rechaza duplicaciones implícitas.
+La acción persistente publica `on` en la columna `State` de REAPER mientras el
+puente está activo y limpia el indicador al terminar.
 
 ## Decisiones iniciales
 

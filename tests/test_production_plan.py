@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from pampapilot.production_plan import build_production_plan
+import pytest
+
+from pampapilot.production_plan import (
+    build_listening_preparation_payload,
+    build_production_plan,
+)
 
 
 def _diagnosis() -> dict:
@@ -89,6 +94,7 @@ def _project() -> dict:
             _track("Drums 2", "{D2}", muted=True),
             _track("Vocals", "{VOX}", fx=2),
             _track("Guitar MIDI - Safe", "{MIDI}", solo=2, fx=1),
+            _track("Guitar MIDI - Reconstructed", "{MIDI-RECON}", fx=1),
         ],
     }
 
@@ -149,3 +155,31 @@ def test_plan_identity_changes_with_reaper_state() -> None:
     second = build_production_plan(_diagnosis(), changed)
 
     assert first["plan_id"] != second["plan_id"]
+
+
+def test_listening_preparation_is_derived_from_approved_plan() -> None:
+    plan = build_production_plan(_diagnosis(), _project())
+
+    payload = build_listening_preparation_payload(plan, plan["plan_id"])
+
+    assert payload == {
+        "plan_id": plan["plan_id"],
+        "clear_solo_track_guids": ["{MIDI}"],
+        "mute_track_guids": ["{MIDI-RECON}", "{MIDI}"],
+    }
+
+
+def test_listening_preparation_rejects_stale_approval() -> None:
+    plan = build_production_plan(_diagnosis(), _project())
+
+    with pytest.raises(ValueError, match="does not match"):
+        build_listening_preparation_payload(plan, "0" * 24)
+
+
+def test_listening_preparation_rejects_empty_change_set() -> None:
+    project = _project()
+    project["tracks"] = project["tracks"][:4]
+    plan = build_production_plan(_diagnosis(), project)
+
+    with pytest.raises(ValueError, match="no listening preparation changes"):
+        build_listening_preparation_payload(plan, plan["plan_id"])

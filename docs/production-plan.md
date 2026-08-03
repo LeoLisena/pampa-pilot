@@ -47,3 +47,27 @@ El plan `9cc888540ca2b73c519b635e` vinculó correctamente los 12 stems de
 
 El plan no modificó REAPER. Tanto el diagnóstico de señal como la lectura del
 estado fueron verificados; la evaluación perceptual permanece pendiente.
+
+## Preparación aprobada para escuchar
+
+`apply_listening_preparation` vuelve a calcular el plan antes de escribir. Sólo
+continúa si `approved_plan_id` coincide exactamente con el `plan_id` vigente;
+un cambio en REAPER o en los audios invalida la aprobación.
+
+La preparación se deriva del plan, no de parámetros libres. Únicamente puede:
+
+- quitar el solo de pistas que el plan marque como `project.active_solo`;
+- mutear pistas activas que marque como `project.unmanaged_track`.
+
+Los GUID se resuelven antes de comenzar y todos los cambios se aplican en una
+sola transacción deshacible. El puente relee cada pista y sólo informa
+`state_verified` si los solos quedaron quitados y los mutes activados. No cambia
+volumen, paneo, FX, ítems ni archivos, y no implica evaluación perceptual.
+
+En la validación real, el plan vigente `7b90191800008172a82aa26e` fue
+recalculado inmediatamente antes de escribir y conservó su identidad. La
+transacción `c0cb4859-3c2d-4684-abee-6011402feb4f` quitó el solo de
+`Guitar MIDI - Safe` y muteó tanto esa pista como
+`Guitar MIDI - Reconstructed`. La lectura posterior confirmó `solo = 0` y
+`muted = true` en ambas pistas; los demás parámetros quedaron fuera del alcance
+de la operación.

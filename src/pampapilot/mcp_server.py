@@ -25,7 +25,10 @@ from .processing_proposal import (
     build_processing_application_payload,
     propose_track_processing as build_track_processing_proposal,
 )
-from .production_plan import build_production_plan
+from .production_plan import (
+    build_listening_preparation_payload,
+    build_production_plan,
+)
 from .song_preparation import (
     SongPreparationConfig,
     build_song_manifest,
@@ -324,6 +327,34 @@ def diagnose_song(
     )
 
 
+def _build_current_production_plan(
+    project_ref: str,
+    song_name: str,
+    bpm: float,
+    default_source_kind: str,
+    source_overrides: list[dict[str, Any]],
+) -> dict[str, Any]:
+    diagnosis = build_song_diagnosis(
+        song_name,
+        bpm,
+        default_source_kind,
+        source_overrides,
+    )
+    project_reply = _call("get_project_state")
+    project_state = project_reply["result"]
+    if project_state["project_ref"] != project_ref:
+        raise ValueError("the active REAPER project changed while building the plan")
+    details: dict[str, Mapping[str, Any]] = {}
+    for track in project_state["tracks"]:
+        if track["fx_count"] > 0:
+            reply = _call(
+                "get_track_state",
+                {"project_ref": project_ref, "track_guid": track["guid"]},
+            )
+            details[track["guid"]] = reply["result"]
+    return build_production_plan(diagnosis, project_state, details)
+
+
 @mcp.tool(
     title="Previsualizar plan de producción",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
@@ -341,26 +372,13 @@ def preview_production_plan(
 ) -> dict[str, Any]:
     """Cruza diagnóstico de señal con pistas y FX actuales; no modifica REAPER."""
 
-    overrides = [override.model_dump() for override in (source_overrides or [])]
-    diagnosis = build_song_diagnosis(
+    return _build_current_production_plan(
+        project_ref,
         song_name,
         bpm,
         default_source_kind,
-        overrides,
+        [override.model_dump() for override in (source_overrides or [])],
     )
-    project_reply = _call("get_project_state")
-    project_state = project_reply["result"]
-    if project_state["project_ref"] != project_ref:
-        raise ValueError("the active REAPER project changed while building the plan")
-    details: dict[str, Mapping[str, Any]] = {}
-    for track in project_state["tracks"]:
-        if track["fx_count"] > 0:
-            reply = _call(
-                "get_track_state",
-                {"project_ref": project_ref, "track_guid": track["guid"]},
-            )
-            details[track["guid"]] = reply["result"]
-    return build_production_plan(diagnosis, project_state, details)
 
 
 @mcp.tool(
@@ -485,6 +503,65 @@ def set_track_mute(
     return _call(
         "set_track_mute",
         {"project_ref": project_ref, "track_guid": track_guid, "muted": muted},
+    )
+
+
+@mcp.tool(
+    title="Activar o quitar solo de pista",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def set_track_solo(
+    project_ref: str,
+    track_guid: str,
+    soloed: bool,
+) -> dict[str, Any]:
+    """Cambia el solo de una pista y verifica la lectura posterior."""
+
+    return _call(
+        "set_track_solo",
+        {"project_ref": project_ref, "track_guid": track_guid, "soloed": soloed},
+    )
+
+
+@mcp.tool(
+    title="Aplicar preparación aprobada para escuchar la mezcla",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_listening_preparation(
+    project_ref: str,
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    approved_plan_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    default_source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+    source_overrides: Annotated[
+        list[StemSourceOverride] | None, Field(max_length=128)
+    ] = None,
+) -> dict[str, Any]:
+    """Recalcula el plan y aplica sólo su preparación si el ID aprobado sigue vigente."""
+
+    plan = _build_current_production_plan(
+        project_ref,
+        song_name,
+        bpm,
+        default_source_kind,
+        [override.model_dump() for override in (source_overrides or [])],
+    )
+    payload = build_listening_preparation_payload(plan, approved_plan_id)
+    return _call(
+        "prepare_mix_listening",
+        {"project_ref": project_ref, **payload},
     )
 
 

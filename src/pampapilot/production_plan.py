@@ -290,3 +290,41 @@ def build_production_plan(
             "perceptually_evaluated": False,
         },
     }
+
+
+def build_listening_preparation_payload(
+    plan: Mapping[str, Any], approved_plan_id: str
+) -> dict[str, Any]:
+    """Derive only safe listening-state changes from an approved current plan."""
+
+    plan_id = plan.get("plan_id")
+    if not isinstance(plan_id, str) or approved_plan_id != plan_id:
+        raise ValueError("approved_plan_id does not match the current production plan")
+    if plan.get("execute") is not False:
+        raise ValueError("only a non-executing production plan can be approved")
+    items = plan.get("items")
+    if not isinstance(items, list):
+        raise ValueError("production plan has no items")
+
+    clear_solo: set[str] = set()
+    mute: set[str] = set()
+    for item in items:
+        if item.get("id") == "project.active_solo" and item.get("status") == "action_required":
+            clear_solo.update(
+                str(track["guid"])
+                for track in item.get("tracks", [])
+                if track.get("guid")
+            )
+        if item.get("id") == "project.unmanaged_track" and item.get("status") == "review_required":
+            mute.update(
+                str(track["guid"])
+                for track in item.get("tracks", [])
+                if track.get("guid") and not track.get("muted")
+            )
+    if not clear_solo and not mute:
+        raise ValueError("the approved plan contains no listening preparation changes")
+    return {
+        "plan_id": approved_plan_id,
+        "clear_solo_track_guids": sorted(clear_solo),
+        "mute_track_guids": sorted(mute),
+    }

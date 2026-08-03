@@ -1,12 +1,23 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.8.0"
+local BRIDGE_VERSION = "0.9.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
 local SECTION = "PampaPilotBridge"
 local INSTANCE_KEY = "active_instance"
+
+local _, _, action_section_id, action_command_id = reaper.get_action_context()
+
+local function set_action_toggle_state(enabled)
+  if type(action_section_id) ~= "number" or type(action_command_id) ~= "number"
+    or action_command_id <= 0 then
+    return
+  end
+  reaper.SetToggleCommandState(action_section_id, action_command_id, enabled and 1 or 0)
+  reaper.RefreshToolbar2(action_section_id, action_command_id)
+end
 
 local separator = package.config:sub(1, 1)
 local source = debug.getinfo(1, "S").source
@@ -849,6 +860,100 @@ function ACTIONS.set_track_mute(params, request_id)
     local state = read_track(track, index)
     if state.muted ~= muted then error("la lectura posterior del mute no coincide") end
     return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.set_track_solo(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local soloed = require_boolean(params.soloed, "soloed")
+  local result = run_transaction(project, request_id, "ajustar solo", function()
+    local written = reaper.SetMediaTrackInfo_Value(track, "I_SOLO", soloed and 2 or 0)
+    if not written then error("REAPER rechazó el valor de solo") end
+    local state = read_track(track, index)
+    if (state.solo ~= 0) ~= soloed then
+      error("la lectura posterior del solo no coincide")
+    end
+    return { project_ref = ref, track = state, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+
+function ACTIONS.prepare_mix_listening(params, request_id)
+  local project, _, ref = require_project(params)
+  local plan_id = require_string(params.plan_id, "plan_id", 24)
+  if #plan_id ~= 24 or not plan_id:match("^[0-9a-f]+$") then
+    error("plan_id debe contener 24 caracteres hexadecimales minúsculos")
+  end
+
+  local clear_guids = params.clear_solo_track_guids
+  local mute_guids = params.mute_track_guids
+  if type(clear_guids) ~= "table" or type(mute_guids) ~= "table" then
+    error("las listas de pistas deben ser arrays")
+  end
+  if #clear_guids > 64 or #mute_guids > 64 or (#clear_guids + #mute_guids) < 1 then
+    error("la preparación debe contener entre 1 y 128 cambios")
+  end
+
+  local clear_targets = {}
+  local mute_targets = {}
+  local affected = {}
+  local clear_seen = {}
+  local mute_seen = {}
+  for _, raw_guid in ipairs(clear_guids) do
+    local guid = require_string(raw_guid, "clear_solo_track_guid", 64)
+    if clear_seen[guid] then error("GUID duplicado en clear_solo_track_guids: " .. guid) end
+    clear_seen[guid] = true
+    local track, index = find_track_by_guid(project, guid)
+    clear_targets[#clear_targets + 1] = { guid = guid, track = track, index = index }
+    affected[guid] = { track = track, index = index }
+  end
+  for _, raw_guid in ipairs(mute_guids) do
+    local guid = require_string(raw_guid, "mute_track_guid", 64)
+    if mute_seen[guid] then error("GUID duplicado en mute_track_guids: " .. guid) end
+    mute_seen[guid] = true
+    local track, index = find_track_by_guid(project, guid)
+    local automation_mode = reaper.GetMediaTrackInfo_Value(track, "I_AUTOMODE")
+    if automation_mode ~= 0 then
+      error("la pista " .. guid .. " tiene automatización activa")
+    end
+    mute_targets[#mute_targets + 1] = { guid = guid, track = track, index = index }
+    affected[guid] = { track = track, index = index }
+  end
+
+  local result = run_transaction(project, request_id, "preparar escucha de mezcla", function()
+    for _, target in ipairs(clear_targets) do
+      local written = reaper.SetMediaTrackInfo_Value(target.track, "I_SOLO", 0)
+      if not written then error("REAPER rechazó quitar solo de " .. target.guid) end
+    end
+    for _, target in ipairs(mute_targets) do
+      local written = reaper.SetMediaTrackInfo_Value(target.track, "B_MUTE", 1)
+      if not written then error("REAPER rechazó mutear " .. target.guid) end
+    end
+
+    local tracks = {}
+    for guid, target in pairs(affected) do
+      local state = read_track(target.track, target.index)
+      if clear_seen[guid] and state.solo ~= 0 then
+        error("la lectura posterior del solo no coincide en " .. guid)
+      end
+      if mute_seen[guid] and not state.muted then
+        error("la lectura posterior del mute no coincide en " .. guid)
+      end
+      tracks[#tracks + 1] = state
+    end
+    table.sort(tracks, function(left, right) return left.index < right.index end)
+    return {
+      project_ref = ref,
+      plan_id = plan_id,
+      tracks = tracks,
+      cleared_solo_count = #clear_targets,
+      muted_count = #mute_targets,
+      transaction_request_id = request_id,
+    }
   end)
   return result, observations(true)
 end
@@ -1758,9 +1863,11 @@ end
 
 ensure_directories()
 reaper.SetExtState(SECTION, INSTANCE_KEY, instance_token, false)
+set_action_toggle_state(true)
 reaper.atexit(function()
   if reaper.GetExtState(SECTION, INSTANCE_KEY) == instance_token then
     reaper.DeleteExtState(SECTION, INSTANCE_KEY, false)
+    set_action_toggle_state(false)
   end
 end)
 loop()

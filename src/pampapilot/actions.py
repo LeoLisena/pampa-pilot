@@ -67,6 +67,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Activa o desactiva mute y verifica el estado leído de REAPER.",
         ),
         ActionSpec(
+            "set_track_solo",
+            True,
+            VerificationLevel.STATE,
+            "Activa o desactiva solo y verifica el estado leído de REAPER.",
+        ),
+        ActionSpec(
             "apply_track_mix_batch",
             True,
             VerificationLevel.STATE,
@@ -125,6 +131,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Aplica una propuesta aprobada como una única transacción verificable.",
+        ),
+        ActionSpec(
+            "prepare_mix_listening",
+            True,
+            VerificationLevel.STATE,
+            "Quita solos y mutea pistas extra como una transacción aprobada.",
         ),
         ActionSpec(
             "configure_reacomp",
