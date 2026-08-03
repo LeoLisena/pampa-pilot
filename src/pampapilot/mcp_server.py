@@ -14,7 +14,10 @@ from .media_discovery import (
     resolve_input_file,
     resolve_output_directory,
 )
-from .mastering_qc import build_master_delivery_qc
+from .mastering_qc import (
+    build_master_delivery_qc,
+    build_project_master_delivery_qc,
+)
 from .midi_cleanup import (
     CleanupConfig,
     analyze_midi_file,
@@ -158,6 +161,23 @@ def preview_master_delivery_qc(
 
     audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
     return build_master_delivery_qc(audio_path, profile_name=profile)
+
+
+@mcp.tool(
+    title="Previsualizar control de master vinculado a REAPER",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_project_master_delivery_qc(
+    project_ref: str,
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    profile: Literal["spotify_streaming"] = "spotify_streaming",
+) -> dict[str, Any]:
+    """Cruza ajustes de render verificados con mediciones del archivo final."""
+
+    render_reply = _call("get_render_settings", {"project_ref": project_ref})
+    audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
+    file_report = build_master_delivery_qc(audio_path, profile_name=profile)
+    return build_project_master_delivery_qc(render_reply["result"], file_report)
 
 
 @mcp.tool(
@@ -444,6 +464,16 @@ def get_project_state() -> dict[str, Any]:
     """Lee pistas y estado básico del proyecto activo, sin modificarlo."""
 
     return _call("get_project_state")
+
+
+@mcp.tool(
+    title="Leer ajustes de render y master",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_render_settings(project_ref: str) -> dict[str, Any]:
+    """Lee render, destinos y FX del master sin modificar ni abrir el diálogo."""
+
+    return _call("get_render_settings", {"project_ref": project_ref})
 
 
 @mcp.tool(

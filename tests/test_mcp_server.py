@@ -17,6 +17,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
             {
                 "health_check",
                 "get_project_state",
+                "get_render_settings",
                 "get_track_state",
                 "create_track",
                 "set_track_pan",
@@ -39,6 +40,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_song_media",
                 "analyze_midi",
                 "preview_master_delivery_qc",
+                "preview_project_master_delivery_qc",
                 "propose_track_processing",
                 "apply_processing_proposal",
                 "diagnose_song",
@@ -53,6 +55,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         tools = {tool.name: tool for tool in result.tools}
         self.assertTrue(tools["health_check"].annotations.read_only_hint)
         self.assertTrue(tools["get_project_state"].annotations.read_only_hint)
+        self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
@@ -84,6 +87,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_song_media"].annotations.read_only_hint)
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
         self.assertTrue(tools["preview_master_delivery_qc"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_project_master_delivery_qc"].annotations.read_only_hint)
         self.assertTrue(tools["propose_track_processing"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)

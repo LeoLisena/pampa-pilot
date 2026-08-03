@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.9.1"
+local BRIDGE_VERSION = "0.10.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -765,6 +765,46 @@ function ACTIONS.get_project_state(_, _)
     tempo_bpm = reaper.Master_GetTempo(),
     project_state_change_count = reaper.GetProjectStateChangeCount(project),
     tracks = tracks,
+  }, observations(true)
+end
+
+function ACTIONS.get_render_settings(params, _)
+  local project, _, ref = require_project(params)
+  local function read_string(description, optional)
+    local ok, value = reaper.GetSetProjectInfo_String(project, description, "", false)
+    if not ok and optional then return "" end
+    if not ok then error("REAPER no devolvió " .. description) end
+    return value or ""
+  end
+  local master = reaper.GetMasterTrack(project)
+  if not master then error("REAPER no devolvió la pista master") end
+  return {
+    project_ref = ref,
+    project_state_change_count = reaper.GetProjectStateChangeCount(project),
+    project_dirty = reaper.GetSetProjectInfo(project, "DIRTY", 0, false) ~= 0,
+    project_sample_rate_hz = reaper.GetSetProjectInfo(project, "PROJECT_SRATE", 0, false),
+    project_sample_rate_enabled = reaper.GetSetProjectInfo(
+      project, "PROJECT_SRATE_USE", 0, false
+    ) ~= 0,
+    render_settings_flags = reaper.GetSetProjectInfo(project, "RENDER_SETTINGS", 0, false),
+    render_bounds_flag = reaper.GetSetProjectInfo(project, "RENDER_BOUNDSFLAG", 0, false),
+    render_channels = reaper.GetSetProjectInfo(project, "RENDER_CHANNELS", 0, false),
+    render_sample_rate_hz = reaper.GetSetProjectInfo(project, "RENDER_SRATE", 0, false),
+    render_start_seconds = reaper.GetSetProjectInfo(project, "RENDER_STARTPOS", 0, false),
+    render_end_seconds = reaper.GetSetProjectInfo(project, "RENDER_ENDPOS", 0, false),
+    render_tail_flags = reaper.GetSetProjectInfo(project, "RENDER_TAILFLAG", 0, false),
+    render_tail_ms = reaper.GetSetProjectInfo(project, "RENDER_TAILMS", 0, false),
+    render_add_to_project_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_ADDTOPROJ", 0, false
+    ),
+    render_dither_flags = reaper.GetSetProjectInfo(project, "RENDER_DITHER", 0, false),
+    render_normalize_flags = reaper.GetSetProjectInfo(project, "RENDER_NORMALIZE", 0, false),
+    render_directory = read_string("RENDER_FILE"),
+    render_pattern = read_string("RENDER_PATTERN"),
+    render_targets = read_string("RENDER_TARGETS", true),
+    render_format_configuration = read_string("RENDER_FORMAT"),
+    render_secondary_format_configuration = read_string("RENDER_FORMAT2", true),
+    master_fx = read_fx_chain(master, true),
   }, observations(true)
 end
 

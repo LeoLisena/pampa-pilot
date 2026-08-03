@@ -5,7 +5,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from pampapilot.mastering_qc import build_master_delivery_qc
+from pampapilot.mastering_qc import (
+    build_master_delivery_qc,
+    build_project_master_delivery_qc,
+)
 
 
 KNOWLEDGE_ROOT = Path(__file__).resolve().parents[1] / "knowledge"
@@ -59,3 +62,68 @@ def test_qc_identity_changes_with_audio(tmp_path: Path) -> None:
     second = build_master_delivery_qc(second_path, knowledge_root=KNOWLEDGE_ROOT)
 
     assert first["report_id"] != second["report_id"]
+
+
+def _file_report(path: str = "C:/renders/master.wav") -> dict:
+    return {
+        "kind": "pampapilot_master_delivery_qc",
+        "report_id": "a" * 24,
+        "overall_status": "technical_checks_passed",
+        "source": {"file_path": path},
+        "measurements": {"channels": 2, "sample_rate_hz": 48_000},
+        "checks": [],
+    }
+
+
+def _render_state() -> dict:
+    return {
+        "project_ref": "project:test",
+        "project_state_change_count": 12,
+        "project_dirty": False,
+        "project_sample_rate_enabled": True,
+        "project_sample_rate_hz": 48_000,
+        "render_sample_rate_hz": 0,
+        "render_channels": 2,
+        "render_targets": "C:/renders/master.wav",
+        "render_settings_flags": 0,
+        "render_directory": "C:/renders",
+        "render_pattern": "master",
+        "render_dither_flags": 1,
+        "render_normalize_flags": 0,
+        "master_fx": [],
+    }
+
+
+def test_project_linkage_reports_consistent_configuration_without_claiming_provenance() -> None:
+    report = build_project_master_delivery_qc(_render_state(), _file_report())
+
+    assert report["render"]["mode"] == "master_mix"
+    assert report["provenance"]["configuration_consistent"] is True
+    assert report["provenance"]["render_provenance_verified"] is False
+    assert report["verification"] == {
+        "state_verified": True,
+        "signal_verified": True,
+        "perceptually_evaluated": False,
+    }
+
+
+def test_project_linkage_warns_for_dirty_project_and_mismatched_file() -> None:
+    state = _render_state()
+    state["project_dirty"] = True
+    state["render_channels"] = 1
+    state["render_sample_rate_hz"] = 44_100
+    state["render_normalize_flags"] = 1
+    state["master_fx"] = [{"name": "Limiter", "offline": True}]
+
+    report = build_project_master_delivery_qc(
+        state, _file_report("C:/elsewhere/other.wav")
+    )
+    statuses = {check["id"]: check["status"] for check in report["linkage_checks"]}
+
+    assert report["overall_status"] == "review"
+    assert statuses["render.channels_match_file"] == "warning"
+    assert statuses["render.sample_rate_matches_file"] == "warning"
+    assert statuses["render.target_matches_file"] == "warning"
+    assert statuses["project.saved_state"] == "warning"
+    assert statuses["render.normalization"] == "warning"
+    assert statuses["master.fx_online"] == "warning"

@@ -37,6 +37,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Lee el estado estructural mínimo del proyecto.",
         ),
         ActionSpec(
+            "get_render_settings",
+            False,
+            VerificationLevel.STATE,
+            "Lee ajustes de render y cadena del master sin abrir ni modificar el diálogo.",
+        ),
+        ActionSpec(
             "create_track",
             True,
             VerificationLevel.STATE,
