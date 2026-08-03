@@ -142,3 +142,17 @@ La vista **Herramientas** diferencia:
 Este mapa evita confundir código ya implementado con controles todavía no expuestos.
 La vista **Actividad** registra clasificaciones, aplicaciones y Undo durante el proceso
 actual; no incluye secretos ni contenido del chat.
+
+## Modo compacto always-on-top
+
+La vista normal sigue siendo la interfaz predeterminada. El botón **Modo
+compacto** solicita al backend local que abra la misma aplicación con
+`?compact=1&project=<canción>`. En Windows, `scripts/open-compact.ps1` reutiliza
+Microsoft Edge o Google Chrome en modo aplicación, ubica la ventana en la esquina
+inferior derecha y activa `always-on-top` mediante `SetWindowPos`.
+
+No se distribuye un ejecutable adicional ni se duplica el motor: ambas vistas
+comparten el proyecto, el identificador de conversación, las propuestas, la
+política de aprobación y Undo. La canción activa se persiste en `localStorage`;
+si todavía no existe esa preferencia, la vista normal intenta identificar el
+proyecto abierto en REAPER antes de elegir el primer proyecto guardado.

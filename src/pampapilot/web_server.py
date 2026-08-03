@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 from threading import RLock
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -103,6 +104,10 @@ class ChatInput(BaseModel):
 
 class ProposalDecision(BaseModel):
     decision: Literal["preview", "apply", "reject"]
+
+
+class CompactWindowInput(BaseModel):
+    project_name: Annotated[str, Field(max_length=128)] = ""
 
 
 class StemSourceInput(BaseModel):
@@ -1326,6 +1331,44 @@ async def configure_brain(value: BrainSettingsInput) -> dict[str, Any]:
 async def status() -> dict[str, Any]:
     lm, bridge = await asyncio.gather(_lm_status(), _bridge_status())
     return {"application": "ready", "brain": lm, "reaper": bridge}
+
+
+@app.post("/api/window/compact")
+def open_compact_window(value: CompactWindowInput) -> dict[str, Any]:
+    if os.name != "nt":
+        raise HTTPException(
+            status_code=501,
+            detail="El modo always-on-top automático está implementado para Windows",
+        )
+    launcher = WORKSPACE_ROOT / "scripts" / "open-compact.ps1"
+    if not launcher.is_file():
+        raise HTTPException(status_code=500, detail="No se encontró el lanzador compacto")
+    project_name = ""
+    if value.project_name.strip():
+        try:
+            project_name = _validate_song_name(value.project_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(launcher),
+                "-ProjectName",
+                project_name,
+            ],
+            cwd=str(WORKSPACE_ROOT),
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"No se pudo iniciar la ventana compacta: {exc}"
+        ) from exc
+    return {"status": "opening", "mode": "compact", "always_on_top": True}
 
 
 @app.get("/api/projects")

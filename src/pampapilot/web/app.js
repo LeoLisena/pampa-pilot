@@ -1,5 +1,12 @@
 const state = { project: null, projects: [], history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
 const $ = (selector) => document.querySelector(selector);
+const pageParameters = new URLSearchParams(window.location.search);
+const compactMode = pageParameters.get('compact') === '1';
+const requestedProject = pageParameters.get('project') || '';
+if (compactMode) {
+  document.body.classList.add('compact-mode');
+  document.title = requestedProject ? `PampaPilot Compacto - ${requestedProject}` : 'PampaPilot Compacto';
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -48,9 +55,13 @@ function renderProject(project) {
     state.history = [];
   }
   state.project = project;
+  localStorage.setItem('pampapilot.activeProject', project.name);
+  if (compactMode) document.title = `PampaPilot Compacto - ${project.name}`;
   $('#project-title').textContent = project.name;
   $('#project-bpm').textContent = project.tempo_bpm ? `${project.tempo_bpm} BPM` : 'BPM sin definir';
   $('#project-source').textContent = `Origen: ${project.source_label || 'Sin clasificar'}`;
+  $('#compact-project-title').textContent = project.name;
+  $('#compact-project-meta').textContent = `${project.tempo_bpm ? `${project.tempo_bpm} BPM` : 'BPM sin definir'} · ${project.source_label || 'Sin clasificar'}`;
   const timeline = $('#timeline');
   timeline.innerHTML = '';
   if (!project.sections?.length) {
@@ -126,7 +137,17 @@ async function loadProjects(preferredName = '') {
   const result = await api('/api/projects');
   const projects = result.projects.filter(project => !project.error);
   state.projects = projects;
-  const selected = projects.find(project => project.name === preferredName) || projects[0];
+  const rememberedProject = localStorage.getItem('pampapilot.activeProject') || '';
+  let wantedProject = preferredName || requestedProject || rememberedProject;
+  if (!wantedProject && projects.length) {
+    try {
+      const reaperProject = await api('/api/reaper/project');
+      const projectRef = String(reaperProject.result?.project_ref || '').toLocaleLowerCase();
+      const matches = projects.filter(project => projectRef.includes(project.name.toLocaleLowerCase()));
+      if (matches.length === 1) wantedProject = matches[0].name;
+    } catch { /* REAPER may be closed; fall back to the first saved song. */ }
+  }
+  const selected = projects.find(project => project.name === wantedProject) || projects[0];
   if (selected) renderProject(selected);
   else {
     $('#project-title').textContent = 'Creá tu primera canción';
@@ -628,6 +649,23 @@ $('#settings-form').addEventListener('submit', async event => {
 
 const newSongDialog = $('#new-song-dialog');
 $('#open-new-song').addEventListener('click', () => newSongDialog.showModal());
+$('#open-compact').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api('/api/window/compact', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project_name: state.project?.name || ''})
+    });
+    toast('Modo compacto abierto abajo a la derecha.');
+  } catch (error) {
+    toast(`No pude abrir el modo compacto: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
+$('#close-compact').addEventListener('click', () => window.close());
 $('#new-song-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;

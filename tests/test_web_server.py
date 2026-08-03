@@ -41,6 +41,20 @@ class WebServerTests(unittest.TestCase):
         self.assertGreaterEqual(len(groups), 3)
         self.assertTrue(any(item["id"] == "producer_chain" for group in groups for item in group["items"]))
 
+    @patch("pampapilot.web_server.subprocess.Popen")
+    def test_compact_window_launcher_is_exposed(self, popen):
+        response = self.client.post(
+            "/api/window/compact", json={"project_name": "Mi Pequeño Sol"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "opening", "mode": "compact", "always_on_top": True},
+        )
+        popen.assert_called_once()
+        self.assertIn("Mi Pequeño Sol", popen.call_args.args[0])
+
     def test_track_names_remain_stable_after_analysis_is_invalidated(self):
         names = _suggested_track_names(
             [{"name": "5 Drums"}, {"name": "6 Drums- OK"}, {"name": "7 Drums"}]

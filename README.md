@@ -175,6 +175,9 @@ Abra `http://127.0.0.1:8765`. Desde **Nueva canción** se cargan título, BPM,
 origen, letra, stems, MIDI y referencia sin manipular la estructura interna de
 carpetas. La configuración del cerebro admite LM Studio con token requerido de
 forma predeterminada y un modo sin autenticación para una red confiable.
+El botón **Modo compacto** abre la misma interfaz como ventana web always-on-top
+abajo a la derecha, conserva la canción activa y permite operar el chat mientras
+REAPER permanece visible.
 
 Para abrir la interfaz desde otro equipo de la LAN use
 `.\scripts\run-web.ps1 -ServeOnLocalNetwork`. Consulte

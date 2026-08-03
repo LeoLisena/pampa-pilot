@@ -31,7 +31,11 @@
         <button class="status-pill" id="bridge-status"><i></i><span>Bridge verificando…</span></button>
         <button class="status-pill" id="brain-status"><i></i><span>LLM sin configurar</span></button>
       </div>
-      <div class="profile"><span class="avatar">PP</span><span>PampaPilot</span></div>
+      <div class="topbar-actions">
+        <button class="compact-launch" id="open-compact">▣ Modo compacto</button>
+        <button class="compact-launch compact-only" id="close-compact">× Cerrar</button>
+        <div class="profile"><span class="avatar">PP</span><span>PampaPilot</span></div>
+      </div>
     </header>
 
     <main class="workspace">
@@ -70,6 +74,7 @@
 
       <aside class="assistant-panel">
         <div class="assistant-title"><span>✦</span><h2>Productor IA</h2><button class="icon-button">⋮</button></div>
+        <div class="compact-project-summary compact-only"><strong id="compact-project-title">Cargando proyecto…</strong><span id="compact-project-meta">—</span></div>
         <div class="messages" id="messages">
           <article class="message assistant-message welcome-message">
             <p>Estoy listo para analizar el proyecto y proponerte cambios conservadores. Nunca modificaré REAPER sin tu aprobación.</p>
