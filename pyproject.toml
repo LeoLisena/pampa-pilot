@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 pampapilot-mcp = "pampapilot.mcp_server:main"
+pampapilot-web = "pampapilot.web_server:main"
 
 [project.optional-dependencies]
 analysis = [
@@ -28,12 +29,21 @@ lyrics-alignment = [
     "faster-whisper>=1.2,<2",
     "truststore>=0.10,<1",
 ]
+web = [
+    "fastapi>=0.116,<1",
+    "httpx>=0.28,<1",
+    "python-multipart>=0.0.20,<1",
+    "uvicorn>=0.35,<1",
+]
 dev = [
     "pytest>=8,<10",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+pampapilot = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.uv]
 system-certs = true

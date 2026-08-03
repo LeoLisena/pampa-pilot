@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PampaPilot</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">P</span><span>PampaPilot</span></div>
+      <nav class="nav-list" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="home"><span>⌂</span>Inicio</button>
+        <button class="nav-item" data-view="songs"><span>♫</span>Canciones</button>
+        <button class="nav-item" data-view="project"><span>☷</span>Proyecto</button>
+        <button class="nav-item" data-view="chat"><span>◌</span>Chat</button>
+        <button class="nav-item" data-view="activity"><span>⌁</span>Actividad</button>
+        <button class="nav-item" id="open-settings"><span>⚙</span>Configuración</button>
+      </nav>
+      <div class="quick-actions">
+        <p>⚡ Atajos rápidos</p>
+        <button id="analyze-project">⌕ Analizar proyecto</button>
+        <button disabled title="Se habilitará en la fase de render">⇧ Exportar mezcla</button>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <div class="connection-status">
+        <button class="status-pill" id="reaper-status"><i></i><span>REAPER verificando…</span></button>
+        <button class="status-pill" id="bridge-status"><i></i><span>Bridge verificando…</span></button>
+        <button class="status-pill" id="brain-status"><i></i><span>LLM sin configurar</span></button>
+      </div>
+      <div class="profile"><span class="avatar">PP</span><span>PampaPilot</span></div>
+    </header>
+
+    <main class="workspace">
+      <section class="project-column">
+        <div class="project-heading">
+          <div>
+            <div class="eyebrow">Proyecto activo</div>
+            <h1 id="project-title">Cargando…</h1>
+            <div class="project-meta">
+              <span id="project-bpm">— BPM</span>
+              <span id="project-source">Origen: —</span>
+            </div>
+          </div>
+          <button class="primary-button" id="open-new-song">＋ Nueva canción</button>
+        </div>
+
+        <section class="panel structure-panel">
+          <div class="panel-title"><h2>Estructura de la canción</h2><span id="structure-note">Desde la letra</span></div>
+          <div class="timeline" id="timeline">
+            <div class="empty-state">Cargando secciones…</div>
+          </div>
+        </section>
+
+        <section class="panel stems-panel">
+          <div class="panel-title"><h2>Stems del proyecto</h2><button class="icon-button" title="Clasificar stems">☷</button></div>
+          <div class="stem-header"><span>Stem</span><span>Origen</span><span>Estado</span><span>Problemas</span><span></span></div>
+          <div id="stem-list"><div class="empty-state">Cargando stems…</div></div>
+        </section>
+
+        <section class="analysis-banner" id="analysis-banner">
+          <div class="info-icon">i</div>
+          <div><strong>Proyecto cargado.</strong><p>Los datos técnicos aparecerán aquí después del análisis.</p></div>
+          <button id="analysis-details">Ver detalles del análisis ›</button>
+        </section>
+      </section>
+
+      <aside class="assistant-panel">
+        <div class="assistant-title"><span>✦</span><h2>Productor IA</h2><button class="icon-button">⋮</button></div>
+        <div class="messages" id="messages">
+          <article class="message assistant-message welcome-message">
+            <p>Estoy listo para analizar el proyecto y proponerte cambios conservadores. Nunca modificaré REAPER sin tu aprobación.</p>
+          </article>
+        </div>
+        <div id="proposal-card"></div>
+        <form class="chat-form" id="chat-form">
+          <textarea id="chat-input" rows="1" placeholder="Escribí un mensaje…" required></textarea>
+          <button type="submit" aria-label="Enviar">➤</button>
+        </form>
+        <p class="assistant-disclaimer">El Productor IA puede equivocarse. PampaPilot valida las acciones antes de aplicarlas.</p>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="settings-dialog">
+    <form class="modal-card" id="settings-form">
+      <div class="modal-heading"><div><span class="eyebrow">Cerebro intercambiable</span><h2>Conexión con LM Studio</h2></div><button type="button" class="close-dialog">×</button></div>
+      <label>Dirección del servidor<input id="brain-url" name="base_url" type="url" value="http://127.0.0.1:1234" required></label>
+      <label>Modelo<input id="brain-model" name="model" type="text" placeholder="google/gemma-4-31b"></label>
+      <label>Seguridad<select id="brain-auth" name="authentication_required"><option value="true">Token requerido (recomendado)</option><option value="false">Servidor sin autenticación</option></select></label>
+      <label>Token de LM Studio<input id="brain-token" name="token" type="password" autocomplete="new-password" placeholder="No se guarda en disco"></label>
+      <p class="form-hint">El token vive sólo en la memoria del servidor mientras PampaPilot está abierto.</p>
+      <div class="modal-actions"><button type="button" class="secondary-button close-dialog">Cancelar</button><button class="primary-button" type="submit">Guardar y probar</button></div>
+      <p class="form-result" id="settings-result"></p>
+    </form>
+  </dialog>
+
+  <dialog id="new-song-dialog">
+    <form class="modal-card wide-modal" id="new-song-form">
+      <div class="modal-heading"><div><span class="eyebrow">Entrada simplificada</span><h2>Nueva canción</h2></div><button type="button" class="close-dialog">×</button></div>
+      <div class="form-grid">
+        <label>Título<input name="title" type="text" maxlength="128" required></label>
+        <label>BPM<input name="bpm" type="number" min="20" max="400" step="0.01" required></label>
+        <label>Origen principal<select name="source_kind"><option value="suno_stems">Suno</option><option value="organic_multitrack">Grabación orgánica</option><option value="mixed">Suno + orgánico</option><option value="unknown">Sin clasificar</option></select></label>
+        <label class="file-field">Stems WAV/FLAC<input name="stems" type="file" accept=".wav,.flac,audio/wav,audio/flac" multiple></label>
+        <label class="file-field">Archivos MIDI<input name="midi" type="file" accept=".mid,.midi,audio/midi" multiple></label>
+        <label class="file-field">Referencia opcional<input name="reference" type="file" accept=".wav,.flac,audio/wav,audio/flac"></label>
+      </div>
+      <label>Letra con secciones<textarea name="lyrics" rows="9" placeholder="[Intro]&#10;&#10;[Verse 1]&#10;..."></textarea></label>
+      <p class="form-hint">PampaPilot organizará internamente los archivos. No necesitás crear carpetas.</p>
+      <div class="upload-progress hidden" id="upload-progress"><span></span></div>
+      <div class="modal-actions"><button type="button" class="secondary-button close-dialog">Cancelar</button><button class="primary-button" type="submit">Crear canción</button></div>
+      <p class="form-result" id="new-song-result"></p>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

@@ -157,6 +157,24 @@ Las herramientas, Python y el entorno se guardan localmente en `.tools/`,
 `.python-version`, `pyproject.toml` y `uv.lock`, por lo que otra máquina puede
 reconstruir el mismo entorno sin depender del Python instalado en Windows.
 
+### Interfaz web
+
+La primera interfaz de PampaPilot se inicia con:
+
+```powershell
+.\scripts\run-web.ps1
+```
+
+Abra `http://127.0.0.1:8765`. Desde **Nueva canción** se cargan título, BPM,
+origen, letra, stems, MIDI y referencia sin manipular la estructura interna de
+carpetas. La configuración del cerebro admite LM Studio con token requerido de
+forma predeterminada y un modo sin autenticación para una red confiable.
+
+Para abrir la interfaz desde otro equipo de la LAN use
+`.\scripts\run-web.ps1 -ServeOnLocalNetwork`. Consulte
+[`docs/web-interface.md`](docs/web-interface.md) para límites de seguridad y
+alcance de la versión actual.
+
 ## Pruebas locales
 
 ```powershell
