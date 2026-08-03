@@ -160,7 +160,37 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "remove_track_fx",
             True,
             VerificationLevel.STATE,
-            "Quita una instancia ReaGate o ReaXcomp exacta mediante GUID.",
+            "Quita una instancia FX permitida exacta mediante GUID.",
+        ),
+        ActionSpec(
+            "create_effect_bus",
+            True,
+            VerificationLevel.STATE,
+            "Crea un bus ReaVerbate o ReaDelay 100 % wet y verifica su estado.",
+        ),
+        ActionSpec(
+            "configure_ambience_fx",
+            True,
+            VerificationLevel.STATE,
+            "Configura el FX exacto de un bus de ambiente mediante GUID.",
+        ),
+        ActionSpec(
+            "create_bus_send",
+            True,
+            VerificationLevel.STATE,
+            "Crea un envío post-fader sin MIDI y verifica origen, destino y nivel.",
+        ),
+        ActionSpec(
+            "remove_bus_send",
+            True,
+            VerificationLevel.STATE,
+            "Quita un envío exacto identificado por los GUID de sus pistas.",
+        ),
+        ActionSpec(
+            "remove_effect_bus",
+            True,
+            VerificationLevel.STATE,
+            "Quita un bus vacío permitido y sus recepciones después de verificarlo.",
         ),
         ActionSpec(
             "add_master_stock_fx",

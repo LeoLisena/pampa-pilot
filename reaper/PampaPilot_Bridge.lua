@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.15.0"
+local BRIDGE_VERSION = "0.16.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -696,6 +696,19 @@ local function set_boolean_parameter(track, fx_index, ident, target)
   end
 end
 
+local function set_normalized_parameter(track, fx_index, ident, normalized)
+  require_number(normalized, ident, 0.0, 1.0)
+  local parameter_index = find_fx_parameter_by_ident(track, fx_index, ident)
+  if not reaper.TrackFX_SetParamNormalized(
+      track, fx_index, parameter_index, normalized) then
+    error("REAPER rechazó el parámetro " .. ident)
+  end
+  local observed = reaper.TrackFX_GetParamNormalized(track, fx_index, parameter_index)
+  if math.abs(observed - normalized) > 0.000001 then
+    error("la lectura normalizada posterior no coincide para " .. ident)
+  end
+end
+
 local REAEQ_BAND_TYPES = {
   high_pass = 0,
   low_shelf = 1,
@@ -753,6 +766,28 @@ local function require_reaxcomp(track, fx_index)
   if not fx.enabled or fx.offline then error("ReaXcomp debe estar activo y online") end
   if fx.parameter_count ~= 51 then
     error("la estructura observada de ReaXcomp no coincide con el adaptador de cuatro bandas")
+  end
+  return fx
+end
+
+local function require_reaverbate(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reaverbate", 1, true) then
+    error("el FX indicado no es ReaVerbate")
+  end
+  if not fx.enabled or fx.offline then error("ReaVerbate debe estar activo y online") end
+  if fx.parameter_count ~= 11 then error("la estructura de ReaVerbate no coincide") end
+  return fx
+end
+
+local function require_readelay(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("readelay", 1, true) then
+    error("el FX indicado no es ReaDelay")
+  end
+  if not fx.enabled or fx.offline then error("ReaDelay debe estar activo y online") end
+  if fx.parameter_count ~= 15 then
+    error("el adaptador sólo admite ReaDelay con un tap")
   end
   return fx
 end
@@ -971,6 +1006,72 @@ local function apply_deesser_parameters(track, fx_index, spec, expected_guid)
   return fx
 end
 
+local function validate_reaverbate_parameters(params)
+  if type(params) ~= "table" then error("parameters de ReaVerbate debe ser un objeto") end
+  local spec = {
+    room_size = require_number(params.room_size, "room_size", 0.0, 100.0),
+    dampening = require_number(params.dampening, "dampening", 0.0, 100.0),
+    width = require_number(params.width, "width", 0.0, 1.0),
+    predelay_ms = require_number(params.predelay_ms, "predelay_ms", 0.0, 200.0),
+    lowpass_hz = require_number(params.lowpass_hz, "lowpass_hz", 1000.0, 20000.0),
+    highpass_hz = require_number(params.highpass_hz, "highpass_hz", 0.0, 2000.0),
+  }
+  if spec.highpass_hz >= spec.lowpass_hz then
+    error("highpass_hz debe ser menor que lowpass_hz")
+  end
+  return spec
+end
+
+local function apply_reaverbate_parameters(track, fx_index, spec, expected_guid)
+  require_reaverbate(track, fx_index)
+  set_numeric_parameter(track, fx_index, "0:_Wet", 0.0, 0.11)
+  set_normalized_parameter(track, fx_index, "1:_Dry", 0.0)
+  set_numeric_parameter(track, fx_index, "2:_Room_size", spec.room_size, 1.01)
+  set_numeric_parameter(track, fx_index, "3:_Dampening", spec.dampening, 1.01)
+  set_numeric_parameter(track, fx_index, "4:_Width", spec.width, 0.011)
+  set_numeric_parameter(track, fx_index, "5:_Delay", spec.predelay_ms, 1.01, "ms")
+  set_numeric_parameter(track, fx_index, "6:_Lowpass", spec.lowpass_hz, 1.01)
+  set_numeric_parameter(track, fx_index, "7:_Hipass", spec.highpass_hz, 1.01)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaVerbate cambió") end
+  return fx
+end
+
+local function validate_readelay_parameters(params)
+  if type(params) ~= "table" then error("parameters de ReaDelay debe ser un objeto") end
+  local spec = {
+    delay_ms = require_number(params.delay_ms, "delay_ms", 1.0, 2000.0),
+    feedback_db = require_number(params.feedback_db, "feedback_db", -60.0, -1.0),
+    lowpass_hz = require_number(params.lowpass_hz, "lowpass_hz", 1000.0, 20000.0),
+    highpass_hz = require_number(params.highpass_hz, "highpass_hz", 0.0, 5000.0),
+    stereo_width = require_number(params.stereo_width, "stereo_width", 0.0, 1.0),
+    pan = require_number(params.pan, "pan", -1.0, 1.0),
+  }
+  if spec.highpass_hz >= spec.lowpass_hz then
+    error("highpass_hz debe ser menor que lowpass_hz")
+  end
+  return spec
+end
+
+local function apply_readelay_parameters(track, fx_index, spec, expected_guid)
+  require_readelay(track, fx_index)
+  set_numeric_parameter(track, fx_index, "0:_Wet", 0.0, 0.11)
+  set_normalized_parameter(track, fx_index, "1:_Dry", 0.0)
+  set_boolean_parameter(track, fx_index, "2:_1__Enabled", true)
+  set_numeric_parameter(track, fx_index, "3:_1__Length__time_", spec.delay_ms, 0.11, "ms")
+  set_numeric_parameter(track, fx_index, "4:_1__Length__musical_", 0.0, 0.011)
+  set_numeric_parameter(track, fx_index, "5:_1__Feedback", spec.feedback_db, 0.11)
+  set_numeric_parameter(track, fx_index, "6:_1__Lowpass", spec.lowpass_hz, 1.01)
+  set_numeric_parameter(track, fx_index, "7:_1__Hipass", spec.highpass_hz, 1.01)
+  set_numeric_parameter(track, fx_index, "8:_1__Resolution", 24.0, 0.11)
+  set_numeric_parameter(track, fx_index, "9:_1__Stereo_width", spec.stereo_width, 0.011)
+  set_numeric_parameter(track, fx_index, "10:_1__Volume", 0.0, 0.11)
+  set_numeric_parameter(track, fx_index, "11:_1__Pan", spec.pan, 0.0011)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaDelay cambió") end
+  return fx
+end
+
 local function validate_realimit_parameters(params)
   if type(params) ~= "table" then error("parameters de ReaLimit debe ser un objeto") end
   local spec = {
@@ -1001,6 +1102,69 @@ local function count_fx_by_name_fragment(track, fragment)
     if fx.name:lower():find(fragment, 1, true) then count = count + 1 end
   end
   return count
+end
+
+local function read_track_send(source_track, send_index)
+  local destination = reaper.GetTrackSendInfo_Value(
+    source_track, 0, send_index, "P_DESTTRACK")
+  if not destination then error("REAPER no devolvió el destino del envío") end
+  local volume = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "D_VOL")
+  return {
+    index = send_index,
+    source_track_guid = reaper.GetTrackGUID(source_track),
+    destination_track_guid = reaper.GetTrackGUID(destination),
+    volume = volume,
+    volume_db = amplitude_to_db(volume),
+    pan = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "D_PAN"),
+    muted = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "B_MUTE") ~= 0,
+    phase_inverted = reaper.GetTrackSendInfo_Value(
+      source_track, 0, send_index, "B_PHASE") ~= 0,
+    send_mode = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "I_SENDMODE"),
+    source_channels = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "I_SRCCHAN"),
+    destination_channels = reaper.GetTrackSendInfo_Value(
+      source_track, 0, send_index, "I_DSTCHAN"),
+    midi_flags = reaper.GetTrackSendInfo_Value(source_track, 0, send_index, "I_MIDIFLAGS"),
+  }
+end
+
+local function find_send_by_destination(source_track, destination_guid)
+  for send_index = 0, reaper.GetTrackNumSends(source_track, 0) - 1 do
+    local observed = read_track_send(source_track, send_index)
+    if observed.destination_track_guid == destination_guid then
+      return send_index, observed
+    end
+  end
+  return nil, nil
+end
+
+local function configure_track_send(source_track, send_index, volume_db, pan)
+  local fields = {
+    {"D_VOL", db_to_amplitude(volume_db)},
+    {"D_PAN", pan},
+    {"B_MUTE", 0},
+    {"B_PHASE", 0},
+    {"I_SENDMODE", 0},
+    {"I_SRCCHAN", 0},
+    {"I_DSTCHAN", 0},
+    {"I_MIDIFLAGS", 31},
+  }
+  for _, field in ipairs(fields) do
+    if not reaper.SetTrackSendInfo_Value(
+        source_track, 0, send_index, field[1], field[2]) then
+      error("REAPER rechazó el campo de envío " .. field[1])
+    end
+  end
+  local observed = read_track_send(source_track, send_index)
+  if math.abs(observed.volume - db_to_amplitude(volume_db)) > 0.000001
+      or math.abs(observed.pan - pan) > 0.000001
+      or observed.muted or observed.phase_inverted
+      or observed.send_mode ~= 0
+      or observed.source_channels ~= 0
+      or observed.destination_channels ~= 0
+      or observed.midi_flags ~= 31 then
+    error("la lectura posterior del envío no coincide")
+  end
+  return observed
 end
 
 local function read_imported_item(item, take)
@@ -1718,6 +1882,10 @@ function ACTIONS.add_stock_fx(params, request_id)
     plugin_name, expected_name, description = "ReaGate (Cockos)", "reagate", "agregar ReaGate"
   elseif fx_type == "reaxcomp" then
     plugin_name, expected_name, description = "ReaXcomp (Cockos)", "reaxcomp", "agregar ReaXcomp"
+  elseif fx_type == "reaverbate" then
+    plugin_name, expected_name, description = "ReaVerbate (Cockos)", "reaverbate", "agregar ReaVerbate"
+  elseif fx_type == "readelay" then
+    plugin_name, expected_name, description = "ReaDelay (Cockos)", "readelay", "agregar ReaDelay"
   else
     error("FX nativo no permitido")
   end
@@ -1755,8 +1923,10 @@ function ACTIONS.remove_track_fx(params, request_id)
   local fx = read_fx(track, fx_index, false)
   local lower_name = fx.name:lower()
   if not lower_name:find("reagate", 1, true)
-      and not lower_name:find("reaxcomp", 1, true) then
-    error("sólo se permite quitar ReaGate o ReaXcomp mediante esta acción")
+      and not lower_name:find("reaxcomp", 1, true)
+      and not lower_name:find("reaverbate", 1, true)
+      and not lower_name:find("readelay", 1, true) then
+    error("el FX no pertenece al conjunto removible permitido")
   end
   local before_count = reaper.TrackFX_GetCount(track)
   local result = run_transaction(
@@ -1778,6 +1948,181 @@ function ACTIONS.remove_track_fx(params, request_id)
       }
     end
   )
+  return result, observations(true)
+end
+
+function ACTIONS.create_effect_bus(params, request_id)
+  local project, _, ref = require_project(params)
+  local bus_name = require_string(params.bus_name, "bus_name", 128)
+  local effect_type = require_string(params.effect_type, "effect_type", 32)
+  if not bus_name:match("^BUS ") then error("bus_name debe comenzar con 'BUS '") end
+  local plugin_name, spec, apply_parameters
+  if effect_type == "reverb" then
+    plugin_name = "ReaVerbate (Cockos)"
+    spec = validate_reaverbate_parameters(params.parameters)
+    apply_parameters = apply_reaverbate_parameters
+  elseif effect_type == "delay" then
+    plugin_name = "ReaDelay (Cockos)"
+    spec = validate_readelay_parameters(params.parameters)
+    apply_parameters = apply_readelay_parameters
+  else
+    error("tipo de bus no permitido")
+  end
+  for index = 0, reaper.CountTracks(project) - 1 do
+    local track = reaper.GetTrack(project, index)
+    local _, observed_name = reaper.GetTrackName(track)
+    if observed_name == bus_name then error("ya existe una pista con el nombre del bus") end
+  end
+
+  local result = run_transaction(project, request_id, "crear bus " .. effect_type, function()
+    local index = reaper.CountTracks(project)
+    reaper.InsertTrackInProject(project, index, 0)
+    local bus = reaper.GetTrack(project, index)
+    if not bus then error("REAPER no devolvió la pista de bus") end
+    local ok, value = xpcall(function()
+      if not reaper.GetSetMediaTrackInfo_String(bus, "P_NAME", bus_name, true) then
+        error("REAPER rechazó el nombre del bus")
+      end
+      if not reaper.SetMediaTrackInfo_Value(bus, "D_VOL", 1.0)
+          or not reaper.SetMediaTrackInfo_Value(bus, "D_PAN", 0.0)
+          or not reaper.SetMediaTrackInfo_Value(bus, "B_MAINSEND", 1.0) then
+        error("REAPER rechazó el estado del bus")
+      end
+      local fx_index = reaper.TrackFX_AddByName(bus, plugin_name, false, -1)
+      if fx_index < 0 then error("REAPER no pudo agregar el FX del bus") end
+      local fx = apply_parameters(bus, fx_index, spec, nil)
+      local state = read_track(bus, index)
+      if state.name ~= bus_name or state.fx_count ~= 1
+          or math.abs(state.volume - 1.0) > 0.000001
+          or math.abs(state.pan) > 0.000001 then
+        error("la lectura posterior del bus no coincide")
+      end
+      return {
+        project_ref = ref,
+        effect_type = effect_type,
+        bus = state,
+        fx = fx,
+        transaction_request_id = request_id,
+      }
+    end, debug.traceback)
+    if not ok then
+      if reaper.ValidatePtr2(project, bus, "MediaTrack*") then reaper.DeleteTrack(bus) end
+      error(value)
+    end
+    return value
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_ambience_fx(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  local effect_type = require_string(params.effect_type, "effect_type", 32)
+  local spec, apply_parameters
+  if effect_type == "reverb" then
+    require_reaverbate(track, fx_index)
+    spec = validate_reaverbate_parameters(params)
+    apply_parameters = apply_reaverbate_parameters
+  elseif effect_type == "delay" then
+    require_readelay(track, fx_index)
+    spec = validate_readelay_parameters(params)
+    apply_parameters = apply_readelay_parameters
+  else
+    error("tipo de ambiente no permitido")
+  end
+  local result = run_transaction(project, request_id, "configurar bus " .. effect_type, function()
+    return {
+      project_ref = ref,
+      effect_type = effect_type,
+      fx = apply_parameters(track, fx_index, spec, params.fx_guid),
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.create_bus_send(params, request_id)
+  local project, _, ref = require_project(params)
+  local source = find_track_by_guid(project, params.source_track_guid)
+  local destination = find_track_by_guid(project, params.destination_track_guid)
+  if source == destination then error("una pista no puede enviarse a sí misma") end
+  local volume_db = require_number(params.volume_db, "volume_db", -60.0, 6.0)
+  local pan = require_number(params.pan, "pan", -1.0, 1.0)
+  local destination_guid = reaper.GetTrackGUID(destination)
+  if find_send_by_destination(source, destination_guid) ~= nil then
+    error("ya existe un envío entre las pistas indicadas")
+  end
+  local before_count = reaper.GetTrackNumSends(source, 0)
+  local result = run_transaction(project, request_id, "crear envío a bus", function()
+    local send_index = reaper.CreateTrackSend(source, destination)
+    if send_index < 0 then error("REAPER no pudo crear el envío") end
+    if reaper.GetTrackNumSends(source, 0) ~= before_count + 1 then
+      error("la cantidad de envíos no aumentó exactamente en uno")
+    end
+    local send = configure_track_send(source, send_index, volume_db, pan)
+    if send.destination_track_guid ~= destination_guid then
+      error("el destino leído del envío no coincide")
+    end
+    return { project_ref = ref, send = send, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.remove_bus_send(params, request_id)
+  local project, _, ref = require_project(params)
+  local source = find_track_by_guid(project, params.source_track_guid)
+  local destination_guid = require_string(
+    params.destination_track_guid, "destination_track_guid", 64)
+  local send_index, send = find_send_by_destination(source, destination_guid)
+  if send_index == nil then error("no existe el envío indicado") end
+  local before_count = reaper.GetTrackNumSends(source, 0)
+  local result = run_transaction(project, request_id, "quitar envío a bus", function()
+    if not reaper.RemoveTrackSend(source, 0, send_index) then
+      error("REAPER no pudo quitar el envío")
+    end
+    if reaper.GetTrackNumSends(source, 0) ~= before_count - 1
+        or find_send_by_destination(source, destination_guid) ~= nil then
+      error("la lectura posterior del envío no coincide")
+    end
+    return { project_ref = ref, removed_send = send, transaction_request_id = request_id }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.remove_effect_bus(params, request_id)
+  local project, _, ref = require_project(params)
+  local bus, index = find_track_by_guid(project, params.bus_track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local state = read_track(bus, index)
+  if not state.name:match("^BUS ") then error("la pista indicada no está identificada como bus") end
+  if reaper.CountTrackMediaItems(bus) ~= 0 then error("el bus contiene ítems y no puede quitarse") end
+  if state.fx_count ~= 1 then error("el bus debe contener exactamente un FX") end
+  local fx = read_fx(bus, find_fx_by_guid(bus, fx_guid), false)
+  local lower_name = fx.name:lower()
+  if not lower_name:find("reaverbate", 1, true)
+      and not lower_name:find("readelay", 1, true) then
+    error("el FX del bus no pertenece al conjunto permitido")
+  end
+  local before_count = reaper.CountTracks(project)
+  local result = run_transaction(project, request_id, "quitar bus de ambiente", function()
+    reaper.DeleteTrack(bus)
+    if reaper.CountTracks(project) ~= before_count - 1 then
+      error("la cantidad de pistas no disminuyó exactamente en uno")
+    end
+    for observed_index = 0, reaper.CountTracks(project) - 1 do
+      if reaper.GetTrackGUID(reaper.GetTrack(project, observed_index)) == state.guid then
+        error("el bus continúa presente después de quitarlo")
+      end
+    end
+    return {
+      project_ref = ref,
+      removed_bus = state,
+      removed_fx = fx,
+      track_count = reaper.CountTracks(project),
+      transaction_request_id = request_id,
+    }
+  end)
   return result, observations(true)
 end
 

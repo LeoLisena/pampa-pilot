@@ -1,0 +1,99 @@
+id: mixing.supervised-ambience-buses
+title: Puntos de partida supervisados para buses de ambiente
+stage: spatial_mix
+purpose: Proponer profundidad y espacio mediante buses 100 % wet y envíos post-fader.
+principles:
+  - No agregar reverb o delay por rutina a stems de Suno ya procesados.
+  - Mantener la señal directa en la pista fuente y el efecto 100 % wet en el bus.
+  - Filtrar graves y agudos del retorno para evitar barro y dureza.
+  - El ambiente es una decisión artística y siempre requiere comparación auditiva.
+profiles:
+  lead_vocal_reverb:
+    roles: [lead_vocal]
+    effect_type: reverb
+    bus_name: BUS Vocal Reverb
+    send_db: -16.0
+    parameters:
+      room_size: 45.0
+      dampening: 55.0
+      width: 1.0
+      predelay_ms: 35.0
+      lowpass_hz: 10000.0
+      highpass_hz: 180.0
+    suno_send_db: -24.0
+    suno_parameters:
+      room_size: 32.0
+      dampening: 65.0
+      width: 0.85
+      predelay_ms: 25.0
+      lowpass_hz: 8500.0
+      highpass_hz: 220.0
+  guitar_reverb:
+    roles: [guitar, strings]
+    effect_type: reverb
+    bus_name: BUS Instrument Reverb
+    send_db: -19.0
+    parameters:
+      room_size: 40.0
+      dampening: 60.0
+      width: 0.9
+      predelay_ms: 20.0
+      lowpass_hz: 9000.0
+      highpass_hz: 160.0
+    suno_send_db: -26.0
+    suno_parameters:
+      room_size: 30.0
+      dampening: 68.0
+      width: 0.8
+      predelay_ms: 15.0
+      lowpass_hz: 8000.0
+      highpass_hz: 200.0
+  vocal_delay:
+    roles: [lead_vocal, backing_vocals]
+    effect_type: delay
+    bus_name: BUS Vocal Delay
+    send_db: -19.0
+    delay_beats: 0.5
+    parameters:
+      feedback_db: -15.0
+      lowpass_hz: 6500.0
+      highpass_hz: 180.0
+      stereo_width: 1.0
+      pan: 0.0
+    suno_send_db: -27.0
+    suno_parameters:
+      feedback_db: -24.0
+      lowpass_hz: 5500.0
+      highpass_hz: 250.0
+      stereo_width: 0.8
+      pan: 0.0
+  guitar_delay:
+    roles: [guitar]
+    effect_type: delay
+    bus_name: BUS Guitar Delay
+    send_db: -21.0
+    delay_beats: 0.5
+    parameters:
+      feedback_db: -18.0
+      lowpass_hz: 7000.0
+      highpass_hz: 140.0
+      stereo_width: 1.0
+      pan: 0.0
+    suno_send_db: -28.0
+    suno_parameters:
+      feedback_db: -25.0
+      lowpass_hz: 6000.0
+      highpass_hz: 200.0
+      stereo_width: 0.8
+      pan: 0.0
+confidence: conservative_working_defaults
+reviewed_at: 2026-08-03
+sources:
+  - title: REAPER ReaEffects Guide - ReaDelay and ReaVerbate
+    url: https://www.reaper.fm/guides/ReaEffectsGuide.pdf
+    kind: official_documentation
+  - title: REAPER ReaScript API - track sends
+    url: https://www.reaper.fm/sdk/reascript/reascripthelp.html
+    kind: official_api_documentation
+  - title: Flujo Suno y grabaciones orgánicas indicado por el usuario
+    kind: user_requirement

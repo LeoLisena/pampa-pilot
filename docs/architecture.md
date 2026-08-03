@@ -77,7 +77,7 @@ que puedan alterar el efecto audible de un valor escrito.
 
 - Sólo modo supervisado e interactivo.
 - Sólo efectos nativos con adaptadores explícitos, actualmente ReaEQ, ReaComp,
-  ReaGate, ReaXcomp como de-esser y ReaLimit.
+  ReaGate, ReaXcomp como de-esser, ReaVerbate/ReaDelay en buses y ReaLimit.
 - Sin mastering autónomo, generación musical ni modelo especialista.
 - Sin interfaz gráfica adicional.
 - Sin escritura concurrente de varios agentes.

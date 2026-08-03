@@ -50,6 +50,11 @@ antes de crear o configurar una instancia identificada por GUID.
 También analiza picos sibilantes de voces orgánicas y propone un de-esser con
 ReaXcomp que comprime únicamente la banda superior. Los stems vocales de Suno
 se diagnostican, pero no reciben este procesamiento automáticamente.
+El puente 0.16.0 incorpora buses 100 % wet de ReaVerbate y ReaDelay, con envíos
+post-fader identificados por GUID. Los retardos musicales se convierten a
+milisegundos usando el BPM vigente y cada routing desactiva el transporte MIDI.
+Suno usa perfiles de ambiente deliberadamente más sutiles que las fuentes
+orgánicas, pero no queda excluido de la audición.
 
 ## Decisiones iniciales
 

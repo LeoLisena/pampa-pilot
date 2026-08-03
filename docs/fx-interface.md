@@ -12,7 +12,8 @@ Toda mutación requiere:
 - `track_guid`: identidad estable de la pista;
 - `fx_guid`: identidad estable de la instancia del efecto.
 
-`add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate` y `reaxcomp`. Cada alta comprueba que
+`add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate`, `reaxcomp`,
+`reaverbate` y `readelay`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -98,6 +99,32 @@ confirmó ratio 1:1, threshold 0 dB y auto makeup desactivado en las bandas 1 a
 3 dB, attack 1 ms, release 79 ms (cuantización interna del pedido de 80 ms), RMS
 0 ms y estado activo. La instancia temporal se retiró por GUID y la pista volvió
 a sus dos FX originales.
+
+## Buses de ambiente
+
+Los buses separan la señal directa del retorno: `create_effect_bus` crea una
+pista cuyo nombre comienza por `BUS`, volumen 0 dB, paneo central, salida al
+master y un único ReaVerbate o ReaDelay configurado 100 % wet (`Dry = -inf`).
+`configure_ambience_fx` permite ajustar posteriormente la instancia exacta.
+
+`create_bus_send` crea exclusivamente routing estéreo post-fader. Verifica los
+GUID de origen y destino, nivel, paneo, polaridad normal, canales 1/2 y MIDI
+deshabilitado. `remove_bus_send` revierte sólo esa conexión y
+`remove_effect_bus` exige un bus vacío con un único FX permitido.
+
+Las propuestas son artísticas, no correcciones inferidas del WAV. Para fuentes
+orgánicas ofrecen puntos de partida por rol; el delay convierte fracciones de
+beat a milisegundos usando el BPM. Los stems de Suno reciben una variante de
+audición más sutil: menor nivel de envío, menos feedback y retornos más oscuros
+y acotados, siempre sujetos a aprobación.
+
+La validación real 0.16.0 creó temporalmente dos buses. `BUS Vocal Reverb`
+confirmó Wet 0 dB, Dry `-inf`, room 32, dampening 65, width 0,85, predelay 25 ms,
+filtros 220 Hz-8,5 kHz y envío desde `Vocals` a -24 dB. `BUS Guitar Delay`
+confirmó 352,9 ms a 85 BPM, componente musical 0, feedback -25 dB, filtros
+200 Hz-6 kHz, width 0,8 y envío desde `Guitar` a -28 dB. Ambos routings fueron
+post-fader, estéreo, sin MIDI y `state_verified: true`. En cada prueba se
+retiraron envío y bus; el proyecto volvió a 14 pistas.
 
 ## Prueba real 0.5.1
 

@@ -46,13 +46,14 @@ nucleo debe seguir funcionando en una instalación limpia de REAPER.
 
 ## Próximas extensiones
 
-1. buses verificados de ReaVerb/ReaDelay con envíos por GUID;
-2. captura corta antes/después con el mismo rango para verificar cambios de
+1. captura corta antes/después con el mismo rango para verificar cambios de
    señal sin confundirlos con calidad perceptual;
-3. automatización de parámetros como capacidad separada y explícita.
+2. automatización de parámetros como capacidad separada y explícita.
 
 ReaGate quedó implementado en 0.14.0 y el de-esser ReaXcomp en 0.15.0, ambos
 con propuesta source-aware, aprobación por ID, mutación por GUID y relectura.
+Los buses ReaVerbate/ReaDelay y sus envíos por GUID quedaron implementados en
+0.16.0.
 
 ## Validación real de 0.13.0
 
@@ -72,6 +73,14 @@ adaptador dejó las bandas 1 a 3 en 1:1 y configuró sólo la banda 4 desde 5200
 threshold -28 dB, ratio 3:1, knee 3 dB, attack 1 ms y release observado 79 ms.
 La relectura devolvió `state_verified: true`; la instancia temporal se eliminó
 por GUID y la pista regresó a sus dos FX originales.
+
+## Validación real de 0.16.0
+
+Se crearon buses temporales ReaVerbate y ReaDelay con retornos 100 % wet. Los
+envíos desde `Vocals` y `Guitar` confirmaron destino por GUID, modo post-fader,
+canales estéreo, nivel exacto, paneo central y MIDI deshabilitado. ReaDelay
+representó exactamente 352,9 ms para una corchea a 85 BPM. Los dos buses y sus
+envíos fueron retirados y el proyecto regresó a 14 pistas.
 
 ## Fuentes
 

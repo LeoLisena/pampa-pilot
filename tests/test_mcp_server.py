@@ -31,6 +31,11 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_track_mix_batch",
                 "add_stock_fx",
                 "remove_track_fx",
+                "create_effect_bus",
+                "configure_ambience_fx",
+                "create_bus_send",
+                "remove_bus_send",
+                "remove_effect_bus",
                 "add_master_stock_fx",
                 "restore_candidate_render_settings",
                 "remove_master_fx",
@@ -58,6 +63,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_reagate_proposal",
                 "preview_deesser_proposal",
                 "apply_deesser_proposal",
+                "preview_ambience_bus_proposal",
+                "apply_ambience_bus_proposal",
                 "apply_processing_proposal",
                 "diagnose_song",
                 "preview_song_processing_strategy",
@@ -89,6 +96,11 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
         self.assertFalse(tools["remove_track_fx"].annotations.destructive_hint)
         self.assertFalse(tools["remove_track_fx"].annotations.idempotent_hint)
+        self.assertFalse(tools["create_effect_bus"].annotations.idempotent_hint)
+        self.assertTrue(tools["configure_ambience_fx"].annotations.idempotent_hint)
+        self.assertFalse(tools["create_bus_send"].annotations.idempotent_hint)
+        self.assertFalse(tools["remove_bus_send"].annotations.idempotent_hint)
+        self.assertFalse(tools["remove_effect_bus"].annotations.idempotent_hint)
         self.assertFalse(tools["add_master_stock_fx"].annotations.destructive_hint)
         self.assertFalse(tools["add_master_stock_fx"].annotations.idempotent_hint)
         self.assertTrue(tools["restore_candidate_render_settings"].annotations.idempotent_hint)
@@ -135,6 +147,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["apply_deesser_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_deesser_proposal"].annotations.idempotent_hint)
         self.assertFalse(tools["apply_deesser_proposal"].annotations.destructive_hint)
+        self.assertTrue(tools["preview_ambience_bus_proposal"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_ambience_bus_proposal"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_ambience_bus_proposal"].annotations.idempotent_hint)
+        self.assertFalse(tools["apply_ambience_bus_proposal"].annotations.destructive_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.destructive_hint)

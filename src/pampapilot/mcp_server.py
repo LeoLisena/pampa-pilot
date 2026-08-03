@@ -8,6 +8,10 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
+from .ambience_proposal import (
+    build_ambience_application_payload,
+    propose_ambience as build_ambience_proposal,
+)
 from .bridge_client import BridgeClient
 from .deesser_proposal import (
     build_deesser_application_payload,
@@ -110,6 +114,24 @@ class ProcessingFxBinding(BaseModel):
     fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None
 
 
+class ReverbBusParameters(BaseModel):
+    room_size: Annotated[float, Field(ge=0.0, le=100.0)]
+    dampening: Annotated[float, Field(ge=0.0, le=100.0)]
+    width: Annotated[float, Field(ge=0.0, le=1.0)]
+    predelay_ms: Annotated[float, Field(ge=0.0, le=200.0)]
+    lowpass_hz: Annotated[float, Field(ge=1000.0, le=20000.0)]
+    highpass_hz: Annotated[float, Field(ge=0.0, le=2000.0)]
+
+
+class DelayBusParameters(BaseModel):
+    delay_ms: Annotated[float, Field(ge=1.0, le=2000.0)]
+    feedback_db: Annotated[float, Field(ge=-60.0, le=-1.0)]
+    lowpass_hz: Annotated[float, Field(ge=1000.0, le=20000.0)]
+    highpass_hz: Annotated[float, Field(ge=0.0, le=5000.0)]
+    stereo_width: Annotated[float, Field(ge=0.0, le=1.0)]
+    pan: Annotated[float, Field(ge=-1.0, le=1.0)] = 0.0
+
+
 class StemSourceOverride(BaseModel):
     track_name: Annotated[str, Field(min_length=1, max_length=128)]
     source_kind: Literal["suno_stems", "organic_multitrack", "unknown"]
@@ -154,6 +176,17 @@ def _midi_config(options: MidiCleanupOptions | None) -> CleanupConfig:
         enable_quantization=options.quantize,
         propose_missing_notes=options.propose_missing_notes,
     )
+
+
+def _ambience_parameters(
+    effect_type: Literal["reverb", "delay"],
+    parameters: ReverbBusParameters | DelayBusParameters,
+) -> dict[str, Any]:
+    if effect_type == "reverb" and not isinstance(parameters, ReverbBusParameters):
+        raise ValueError("reverb requires ReverbBusParameters")
+    if effect_type == "delay" and not isinstance(parameters, DelayBusParameters):
+        raise ValueError("delay requires DelayBusParameters")
+    return parameters.model_dump()
 
 
 @mcp.tool(
@@ -476,6 +509,105 @@ def apply_deesser_proposal(
         {"project_ref": project_ref, "track_guid": track_guid, **payload},
         timeout_seconds=30.0,
     )
+
+
+@mcp.tool(
+    title="Previsualizar bus de reverb o delay",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_ambience_bus_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "backing_vocals", "guitar", "strings"],
+    effect_type: Literal["reverb", "delay"],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Propone espacio artístico; no modifica audio ni REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_ambience_proposal(
+        audio_path, role, effect_type, bpm, source_kind
+    )
+
+
+@mcp.tool(
+    title="Aplicar propuesta aprobada de bus de ambiente",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_ambience_bus_proposal(
+    project_ref: str,
+    source_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "backing_vocals", "guitar", "strings"],
+    effect_type: Literal["reverb", "delay"],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Crea bus y envío sólo para una propuesta orgánica vigente y aprobada."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    proposal = build_ambience_proposal(
+        audio_path, role, effect_type, bpm, source_kind
+    )
+    payload = build_ambience_application_payload(proposal, approved_proposal_id)
+    bus_reply = _call(
+        "create_effect_bus",
+        {
+            "project_ref": project_ref,
+            "bus_name": payload["bus_name"],
+            "effect_type": payload["effect_type"],
+            "parameters": payload["parameters"],
+        },
+        timeout_seconds=30.0,
+    )
+    bus = bus_reply["result"]["bus"]
+    fx = bus_reply["result"]["fx"]
+    try:
+        send_reply = _call(
+            "create_bus_send",
+            {
+                "project_ref": project_ref,
+                "source_track_guid": source_track_guid,
+                "destination_track_guid": bus["guid"],
+                "volume_db": payload["send_db"],
+                "pan": 0.0,
+            },
+        )
+    except Exception:
+        _call(
+            "remove_effect_bus",
+            {
+                "project_ref": project_ref,
+                "bus_track_guid": bus["guid"],
+                "fx_guid": fx["guid"],
+            },
+        )
+        raise
+    return {
+        "proposal_id": payload["proposal_id"],
+        "source_sha256": payload["source_sha256"],
+        "effect_type": payload["effect_type"],
+        "bus": bus_reply,
+        "send": send_reply,
+        "verification": {
+            "state_verified": bool(
+                bus_reply["observations"]["state_verified"]
+                and send_reply["observations"]["state_verified"]
+            ),
+            "signal_verified": False,
+            "perceptually_evaluated": False,
+        },
+    }
 
 
 @mcp.tool(
@@ -1007,9 +1139,11 @@ def apply_track_mix_batch(
 def add_stock_fx(
     project_ref: str,
     track_guid: str,
-    fx_type: Literal["reacomp", "reaeq", "reagate", "reaxcomp"],
+    fx_type: Literal[
+        "reacomp", "reaeq", "reagate", "reaxcomp", "reaverbate", "readelay"
+    ],
 ) -> dict[str, Any]:
-    """Agrega ReaComp, ReaEQ, ReaGate o ReaXcomp y verifica su estado."""
+    """Agrega un procesador nativo permitido y verifica identidad y estado."""
 
     return _call(
         "add_stock_fx",
@@ -1031,11 +1165,152 @@ def remove_track_fx(
     track_guid: Annotated[str, Field(min_length=1, max_length=64)],
     fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
 ) -> dict[str, Any]:
-    """Quita exclusivamente la instancia ReaGate o ReaXcomp indicada por GUID."""
+    """Quita exclusivamente una instancia permitida indicada por GUID."""
 
     return _call(
         "remove_track_fx",
         {"project_ref": project_ref, "track_guid": track_guid, "fx_guid": fx_guid},
+    )
+
+
+@mcp.tool(
+    title="Crear bus de reverb o delay",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def create_effect_bus(
+    project_ref: str,
+    bus_name: Annotated[str, Field(min_length=5, max_length=128, pattern=r"^BUS ")],
+    effect_type: Literal["reverb", "delay"],
+    parameters: ReverbBusParameters | DelayBusParameters,
+) -> dict[str, Any]:
+    """Crea un bus 100 % wet con un único FX nativo y relee sus parámetros."""
+
+    return _call(
+        "create_effect_bus",
+        {
+            "project_ref": project_ref,
+            "bus_name": bus_name,
+            "effect_type": effect_type,
+            "parameters": _ambience_parameters(effect_type, parameters),
+        },
+        timeout_seconds=30.0,
+    )
+
+
+@mcp.tool(
+    title="Configurar FX de bus de ambiente",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_ambience_fx(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    effect_type: Literal["reverb", "delay"],
+    parameters: ReverbBusParameters | DelayBusParameters,
+) -> dict[str, Any]:
+    """Ajusta ReaVerbate o ReaDelay exacto en unidades musicales legibles."""
+
+    return _call(
+        "configure_ambience_fx",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "effect_type": effect_type,
+            **_ambience_parameters(effect_type, parameters),
+        },
+    )
+
+
+@mcp.tool(
+    title="Crear envío post-fader a bus",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def create_bus_send(
+    project_ref: str,
+    source_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    destination_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    volume_db: Annotated[float, Field(ge=-60.0, le=6.0)],
+    pan: Annotated[float, Field(ge=-1.0, le=1.0)] = 0.0,
+) -> dict[str, Any]:
+    """Crea un envío estéreo post-fader, sin MIDI, y verifica su destino y nivel."""
+
+    return _call(
+        "create_bus_send",
+        {
+            "project_ref": project_ref,
+            "source_track_guid": source_track_guid,
+            "destination_track_guid": destination_track_guid,
+            "volume_db": volume_db,
+            "pan": pan,
+        },
+    )
+
+
+@mcp.tool(
+    title="Quitar envío a bus",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def remove_bus_send(
+    project_ref: str,
+    source_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    destination_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Quita solamente el envío que une los dos GUID indicados."""
+
+    return _call(
+        "remove_bus_send",
+        {
+            "project_ref": project_ref,
+            "source_track_guid": source_track_guid,
+            "destination_track_guid": destination_track_guid,
+        },
+    )
+
+
+@mcp.tool(
+    title="Quitar bus de ambiente vacío",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def remove_effect_bus(
+    project_ref: str,
+    bus_track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Quita un BUS vacío con un único ReaVerbate o ReaDelay verificado."""
+
+    return _call(
+        "remove_effect_bus",
+        {
+            "project_ref": project_ref,
+            "bus_track_guid": bus_track_guid,
+            "fx_guid": fx_guid,
+        },
     )
 
 
