@@ -68,6 +68,10 @@ from .song_preparation import (
 )
 from .song_diagnosis import diagnose_song as build_song_diagnosis
 from .song_processing_strategy import build_song_processing_strategy
+from .section_volume import (
+    build_section_volume_application_payload,
+    build_section_volume_proposal,
+)
 from .song_structure import (
     build_song_structure_proposal,
     build_structure_region_payload,
@@ -171,6 +175,13 @@ class VocalRiderPoint(BaseModel):
     gain_db: Annotated[float, Field(ge=-6.0, le=6.0)]
     shape: Literal[0] = 0
     tension: Literal[0.0] = 0.0
+
+
+class SongSection(BaseModel):
+    kind: Annotated[str, Field(min_length=1, max_length=64)]
+    label: Annotated[str, Field(min_length=1, max_length=128)]
+    start_seconds: Annotated[float, Field(ge=0.0, le=86_400.0)]
+    end_seconds: Annotated[float, Field(gt=0.0, le=86_400.0)]
 
 
 class StemSourceOverride(BaseModel):
@@ -1490,6 +1501,66 @@ def inspect_track_volume_envelope(
         "inspect_track_volume_envelope",
         {"project_ref": project_ref, "track_guid": track_guid},
     )
+
+
+@mcp.tool(
+    title="Previsualizar volumen opcional por secciones",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_section_volume_automation(
+    regions: Annotated[list[SongSection], Field(min_length=2, max_length=64)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "drums", "percussion", "bass",
+        "guitar", "strings", "keys", "synth",
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    ramp_seconds: Annotated[float, Field(ge=0.02, le=2.0)] = 0.10,
+) -> dict[str, Any]:
+    """Propone movimientos relativos pequeños; nunca modifica REAPER."""
+
+    return build_section_volume_proposal(
+        [region.model_dump() for region in regions],
+        role,
+        source_kind,
+        ramp_seconds=ramp_seconds,
+    )
+
+
+@mcp.tool(
+    title="Aplicar volumen aprobado por secciones",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_section_volume_automation(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    regions: Annotated[list[SongSection], Field(min_length=2, max_length=64)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "drums", "percussion", "bass",
+        "guitar", "strings", "keys", "synth",
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    ramp_seconds: Annotated[float, Field(ge=0.02, le=2.0)] = 0.10,
+) -> dict[str, Any]:
+    """Recalcula la propuesta aceptada y escribe una envolvente verificable."""
+
+    proposal = build_section_volume_proposal(
+        [region.model_dump() for region in regions],
+        role,
+        source_kind,
+        ramp_seconds=ramp_seconds,
+    )
+    payload = build_section_volume_application_payload(proposal, approved_proposal_id)
+    reply = _call(
+        "apply_section_volume_envelope",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+    )
+    return {"proposal": proposal, "application": reply}
 
 
 @mcp.tool(

@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.26.1"
+local BRIDGE_VERSION = "0.27.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -2240,6 +2240,102 @@ function ACTIONS.apply_vocal_rider_envelope(params, request_id)
         source_file_path = source_path,
         source_sha256 = source_sha256,
         source_kind = source_kind,
+        envelope_created = envelope_created,
+        scaling_mode = scaling_mode,
+        points = observed,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
+end
+
+local function validate_section_volume_points(points)
+  if type(points) ~= "table" or #points < 2 or #points > 256 then
+    error("points debe contener entre 2 y 256 puntos")
+  end
+  local validated, previous_time = {}, nil
+  for index, point in ipairs(points) do
+    if type(point) ~= "table" then error("cada punto debe ser un objeto") end
+    local project_time = require_number(
+      point.project_time_seconds, "project_time_seconds", 0.0, 86400.0)
+    if previous_time ~= nil and project_time <= previous_time then
+      error("los puntos deben estar estrictamente ordenados y sin duplicados")
+    end
+    validated[index] = {
+      project_time_seconds = project_time,
+      gain_db = require_number(point.gain_db, "gain_db", -0.75, 0.75),
+      shape = require_integer(point.shape, "shape", 0, 0),
+      tension = require_number(point.tension, "tension", 0.0, 0.0),
+    }
+    previous_time = project_time
+  end
+  return validated
+end
+
+function ACTIONS.apply_section_volume_envelope(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local points = validate_section_volume_points(params.points)
+  local range_start = points[1].project_time_seconds
+  local range_end = points[#points].project_time_seconds
+
+  local result = run_transaction(
+    project, request_id, "aplicar volumen por secciones " .. proposal_id, function()
+      local envelope, envelope_created = ensure_track_volume_envelope(project, track)
+      for point_index = 0, reaper.CountEnvelopePoints(envelope) - 1 do
+        local ok, time = reaper.GetEnvelopePoint(envelope, point_index)
+        if not ok then error("REAPER no pudo leer la envolvente existente") end
+        if time >= range_start - 0.000001 and time <= range_end + 0.000001 then
+          error("la pista ya contiene automatización de volumen en el rango; no se sobrescribe")
+        end
+      end
+      local scaling_mode = reaper.GetEnvelopeScalingMode(envelope)
+      for _, point in ipairs(points) do
+        local value = reaper.ScaleToEnvelopeMode(
+          scaling_mode, db_to_amplitude(point.gain_db))
+        if not reaper.InsertEnvelopePointEx(
+            envelope, -1, point.project_time_seconds, value,
+            point.shape, point.tension, false, true) then
+          error("REAPER rechazó un punto de volumen por secciones")
+        end
+      end
+      reaper.Envelope_SortPointsEx(envelope, -1)
+
+      local observed = {}
+      for point_index = 0, reaper.CountEnvelopePoints(envelope) - 1 do
+        local ok, time, value, shape, tension, selected = reaper.GetEnvelopePoint(
+          envelope, point_index)
+        if not ok then error("REAPER no pudo releer la envolvente") end
+        if time >= range_start - 0.000001 and time <= range_end + 0.000001 then
+          observed[#observed + 1] = {
+            project_time_seconds = time,
+            gain_db = amplitude_to_db(
+              reaper.ScaleFromEnvelopeMode(scaling_mode, value)),
+            shape = shape,
+            tension = tension,
+            selected = selected,
+          }
+        end
+      end
+      if #observed ~= #points then error("la cantidad de puntos releída no coincide") end
+      for index, expected in ipairs(points) do
+        local actual = observed[index]
+        if math.abs(actual.project_time_seconds - expected.project_time_seconds) > 0.000001
+            or math.abs(actual.gain_db - expected.gain_db) > 0.011
+            or actual.shape ~= expected.shape
+            or math.abs(actual.tension - expected.tension) > 0.000001 then
+          error("la lectura posterior del volumen por secciones no coincide")
+        end
+      end
+      return {
+        project_ref = ref,
+        track_guid = params.track_guid,
+        proposal_id = proposal_id,
         envelope_created = envelope_created,
         scaling_mode = scaling_mode,
         points = observed,

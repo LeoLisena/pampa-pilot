@@ -183,3 +183,5 @@ Referencias de diseño para carga genérica de presets:
 2. Operaciones reversibles que ahorran trabajo repetitivo.
 3. Decisiones artísticas como propuestas de audición, no como verdades.
 4. Automatización autónoma sólo después de validación técnica y humana.
+- [x] Automatización opcional y conservadora de volumen por secciones aprobadas,
+  con perfil reducido para stems de Suno y escritura verificable en REAPER.

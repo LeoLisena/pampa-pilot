@@ -115,6 +115,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Inserta una propuesta vocal por frases en una envolvente vacía y relee cada punto.",
         ),
         ActionSpec(
+            "apply_section_volume_envelope",
+            True,
+            VerificationLevel.STATE,
+            "Inserta automatización opcional por secciones y relee cada punto.",
+        ),
+        ActionSpec(
             "configure_item_fades",
             True,
             VerificationLevel.STATE,

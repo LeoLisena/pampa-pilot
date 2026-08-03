@@ -35,6 +35,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "get_track_items",
                 "inspect_track_volume_envelope",
                 "apply_vocal_rider_envelope",
+                "preview_section_volume_automation",
+                "apply_section_volume_automation",
                 "apply_dynamic_resonance_proposal",
                 "apply_project_track_producer_chain",
                 "apply_and_compare_project_track_producer_chain",
@@ -122,6 +124,15 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["inspect_track_volume_envelope"].annotations.read_only_hint)
         self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.read_only_hint)
         self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.destructive_hint)
+        self.assertTrue(
+            tools["preview_section_volume_automation"].annotations.read_only_hint
+        )
+        self.assertFalse(
+            tools["apply_section_volume_automation"].annotations.read_only_hint
+        )
+        self.assertFalse(
+            tools["apply_section_volume_automation"].annotations.destructive_hint
+        )
         self.assertFalse(
             tools["apply_dynamic_resonance_proposal"].annotations.destructive_hint
         )

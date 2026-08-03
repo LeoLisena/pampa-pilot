@@ -81,7 +81,7 @@ El plan cruza los FX existentes, conserva los ajenos y bloquea ambigüedades.
 El puente 0.25.0 agrega la preparación A/B: renderiza el mix antes y después de
 la cadena, restaura los ajustes de render tras cada archivo y crea copias WAV
 igualadas por LUFS mediante atenuación. La decisión sonora sigue siendo humana.
-El puente 0.26.1 interpreta letras estructuradas y muestra regiones reversibles.
+El puente 0.27.0 interpreta letras estructuradas y muestra regiones reversibles.
 El motor 0.2 fusiona downbeats/modelo especialista, análisis por compás de todos
 los stems, consenso por rol y repetición musical; esas métricas quedan separadas
 para reutilizarlas en otras decisiones de productor.
@@ -112,6 +112,13 @@ La estrategia híbrida de procesamiento por stem está en
 El análisis temporal reutilizable está en
 [docs/timeline-analysis.md](docs/timeline-analysis.md) y su aplicación a
 secciones en [docs/song-structure.md](docs/song-structure.md).
+
+La automatización opcional por secciones se previsualiza antes de tocar REAPER.
+Los stems de Suno reciben movimientos de media intensidad (normalmente décimas de
+dB), las pistas orgánicas admiten un margen algo mayor y ninguna propuesta se
+activa por defecto. La aplicación exige el identificador exacto de la propuesta,
+no sobrescribe envolventes existentes y relee todos los puntos escritos. Véase
+[docs/section-volume-automation.md](docs/section-volume-automation.md).
 El fine-tuning lingüístico y su backend automático GPU/CPU están en
 [docs/vocal-lyric-alignment.md](docs/vocal-lyric-alignment.md).
 El control offline del master para distribución está en
