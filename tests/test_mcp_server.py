@@ -20,6 +20,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_project_fx",
                 "discover_installed_fx",
                 "discover_fx_parameter_domain",
+                "preview_saturation_proposal",
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
@@ -46,6 +47,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "remove_master_fx",
                 "add_instrument",
                 "configure_reacomp",
+                "configure_waveshaper",
                 "configure_reagate",
                 "configure_deesser",
                 "configure_reaeq_band",
@@ -86,6 +88,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_project_fx"].annotations.read_only_hint)
         self.assertTrue(tools["discover_installed_fx"].annotations.read_only_hint)
         self.assertTrue(tools["discover_fx_parameter_domain"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_saturation_proposal"].annotations.read_only_hint)
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
@@ -110,6 +113,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["remove_track_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["create_effect_bus"].annotations.idempotent_hint)
         self.assertTrue(tools["configure_ambience_fx"].annotations.idempotent_hint)
+        self.assertTrue(tools["configure_waveshaper"].annotations.idempotent_hint)
         self.assertFalse(tools["create_bus_send"].annotations.idempotent_hint)
         self.assertFalse(tools["remove_bus_send"].annotations.idempotent_hint)
         self.assertFalse(tools["remove_effect_bus"].annotations.idempotent_hint)

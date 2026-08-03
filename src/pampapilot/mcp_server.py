@@ -58,6 +58,7 @@ from .song_preparation import (
 )
 from .song_diagnosis import diagnose_song as build_song_diagnosis
 from .song_processing_strategy import build_song_processing_strategy
+from .saturation_proposal import propose_saturation as build_saturation_proposal
 
 
 mcp = MCPServer(
@@ -132,6 +133,12 @@ class DelayBusParameters(BaseModel):
     pan: Annotated[float, Field(ge=-1.0, le=1.0)] = 0.0
 
 
+class WaveshaperParameters(BaseModel):
+    drive_percent: Annotated[float, Field(ge=0.0, le=35.0)]
+    muffle_percent: Annotated[float, Field(ge=0.0, le=30.0)] = 0.0
+    output_gain_db: Annotated[float, Field(ge=-12.0, le=0.0)]
+
+
 class StemSourceOverride(BaseModel):
     track_name: Annotated[str, Field(min_length=1, max_length=128)]
     source_kind: Literal["suno_stems", "organic_multitrack", "unknown"]
@@ -199,6 +206,18 @@ def discover_song_media(
     """Encuentra stems, MIDI, referencia y pares sugeridos sin abrir REAPER."""
 
     return discover_song_media_files(song_name)
+
+
+@mcp.tool(
+    title="Previsualizar saturación por tipo de fuente",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_saturation_proposal(
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+) -> dict[str, object]:
+    """Propone un punto de partida de audición; no analiza ni modifica audio."""
+
+    return build_saturation_proposal(source_kind)
 
 
 @mcp.tool(
@@ -1236,7 +1255,7 @@ def add_stock_fx(
     track_guid: str,
     fx_type: Literal[
         "reacomp", "reaeq", "reagate", "reaxcomp", "reaverbate", "readelay",
-        "reatune", "reafir"
+        "reatune", "reafir", "waveshaper"
     ],
 ) -> dict[str, Any]:
     """Agrega un procesador nativo permitido y verifica identidad y estado."""
@@ -1244,6 +1263,34 @@ def add_stock_fx(
     return _call(
         "add_stock_fx",
         {"project_ref": project_ref, "track_guid": track_guid, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Configurar saturación stock compensada",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_waveshaper(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    parameters: WaveshaperParameters,
+) -> dict[str, Any]:
+    """Configura JS Multi Waveshaper con estéreo, x2 y limitador interno apagado."""
+
+    return _call(
+        "configure_waveshaper",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            **parameters.model_dump(),
+        },
     )
 
 

@@ -17,7 +17,7 @@ Toda mutación requiere:
 - `fx_guid`: identidad estable de la instancia del efecto.
 
 `add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate`, `reaxcomp`,
-`reaverbate`, `readelay`, `reatune` y `reafir`. Cada alta comprueba que
+`reaverbate`, `readelay`, `reatune`, `reafir` y `waveshaper`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -58,6 +58,32 @@ La integración se validó en REAPER 7.78/x64 sobre `Vocals`: la instancia
 ReaTune `{E3892131-7818-4612-AD5A-37BF75B49E54}` cargó el preset local
 `pampapilota#`; la lectura posterior conservó exactamente el mismo nombre, GUID,
 estado activo y online, con `state_verified: true`.
+
+## Saturación con JS Multi Waveshaper
+
+El puente 0.20.0 selecciona el JSFX stock `Multi Waveshaper`
+porque, a diferencia de `Saturation [LOSER]`, posee salida independiente para
+reducir la ventaja de volumen durante la comparación. El adaptador admite:
+
+- Drive de 0 a 35 %;
+- Muffle de 0 a 30 %;
+- Output de -12 a 0 dB.
+
+Mantiene fija la ruta estéreo, la curva Type 1, el sobremuestreo x2 y el
+limitador interno desactivado. Verifica nombre, orden y lectura de los siete
+parámetros públicos, además del GUID y el estado online.
+
+`preview_saturation_proposal` produce recetas `audition_only`: 5 % de Drive
+para stems de Suno, 12 % para grabaciones orgánicas y 7 % cuando el origen es
+desconocido. Los ajustes de Output (-0,2, -0,6 y -0,3 dB respectivamente) son
+puntos de partida estáticos, no mediciones de loudness. La propuesta declara
+explícitamente `measured: false` y exige A/B con volumen igualado.
+
+La validación real sobre `Guitar` agregó `JS: Multi Waveshaper` con GUID
+`{09B0CB79-B3BA-42DC-B784-35E89CC8ACAA}`. REAPER releyó Stereo, Type 1,
+Drive 5,0 %, Muffle 0,0 %, Output -0,2 dB, Limiter Off, Oversample On, Wet 100 %
+y estado activo/online. Después se retiró esa instancia exacta; Guitar volvió a
+un único FX, el ReaFIR preexistente, con `state_verified: true` en cada paso.
 
 ## ReaComp
 

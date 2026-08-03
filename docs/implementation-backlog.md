@@ -69,10 +69,16 @@ Referencias de diseño para carga genérica de presets:
 
 ### Saturación
 
-- [ ] Descubrir qué saturadores stock/JS están instalados y elegir uno estable.
-- [ ] Adaptador tipado para drive, mezcla y salida.
-- [ ] Compensación de nivel para no confundir más volumen con mejor sonido.
-- [ ] Perfiles sutiles para Suno y más amplios para pistas orgánicas.
+- [x] Descubrir los saturadores instalados y elegir JS Multi Waveshaper por su
+      salida explícita, sobremuestreo y estructura observable.
+- [x] Adaptador tipado para Drive, Muffle y Output; estéreo, curva, limitador y
+      sobremuestreo quedan fijados por seguridad.
+- [x] Perfiles `audition_only` más sutiles para Suno y más amplios para pistas
+      orgánicas, con alternativa conservadora para origen desconocido.
+- [ ] Medir entrada/salida renderizada y refinar Output para A/B con loudness
+      igualado; la compensación actual está marcada correctamente como estimada.
+- [x] Validar en vivo alta, configuración, lectura posterior y retirada por GUID
+      sobre Guitar, conservando intacto el ReaFIR preexistente.
 
 ### ReaPitch
 

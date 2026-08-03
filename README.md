@@ -62,6 +62,9 @@ que REAPER lo conservó, sin depender de parámetros internos no expuestos.
 El puente 0.19.0 habilita el alta y retirada verificable de ReaFIR y el
 descubrimiento de dominios públicos sin escribirlos. La reducción de ruido no
 se habilita todavía: el modo Subtract y el perfil son estado privado del plugin.
+El puente 0.20.0 incorpora saturación mediante `JS: Multi Waveshaper`: controla
+Drive, Muffle y Output, fija estéreo y sobremuestreo x2, desactiva el limitador
+interno y diferencia puntos de partida para Suno, fuentes orgánicas y desconocidas.
 
 ## Decisiones iniciales
 

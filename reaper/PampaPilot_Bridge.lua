@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.19.0"
+local BRIDGE_VERSION = "0.20.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -810,6 +810,97 @@ local function require_realimit(track, fx_index)
     error("el FX indicado no es ReaLimit")
   end
   if not fx.enabled or fx.offline then error("ReaLimit debe estar activo y online") end
+  return fx
+end
+
+local WAVESHAPER_PARAMETER_NAMES = {
+  [0] = "Processing",
+  [1] = "Waveshaper",
+  [2] = "Drive (%)",
+  [3] = "Muffle (%)",
+  [4] = "Output (dB)",
+  [5] = "Limiter",
+  [6] = "Oversample (x2)",
+}
+
+local function require_waveshaper(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("multi waveshaper", 1, true) then
+    error("el FX indicado no es JS Multi Waveshaper")
+  end
+  if not fx.enabled or fx.offline then
+    error("JS Multi Waveshaper debe estar activo y online")
+  end
+  if fx.parameter_count < 7 then
+    error("la estructura de JS Multi Waveshaper no coincide")
+  end
+  for parameter_index = 0, 6 do
+    local ok, observed_name = reaper.TrackFX_GetParamName(
+      track, fx_index, parameter_index)
+    if not ok or observed_name ~= WAVESHAPER_PARAMETER_NAMES[parameter_index] then
+      error("la estructura de parámetros de JS Multi Waveshaper no coincide")
+    end
+  end
+  return fx
+end
+
+local function set_waveshaper_normalized(
+    track, fx_index, parameter_index, normalized, expected_formatted, tolerance)
+  require_number(normalized, "normalized", 0.0, 1.0)
+  if not reaper.TrackFX_SetParamNormalized(
+      track, fx_index, parameter_index, normalized) then
+    error("REAPER rechazó " .. WAVESHAPER_PARAMETER_NAMES[parameter_index])
+  end
+  local observed_normalized = reaper.TrackFX_GetParamNormalized(
+    track, fx_index, parameter_index)
+  if math.abs(observed_normalized - normalized) > 0.000001 then
+    error("la lectura normalizada no coincide para "
+      .. WAVESHAPER_PARAMETER_NAMES[parameter_index])
+  end
+  if expected_formatted ~= nil then
+    local ok, formatted = reaper.TrackFX_GetFormattedParamValue(
+      track, fx_index, parameter_index)
+    local observed = ok and parse_formatted_number(formatted) or nil
+    if observed == nil or math.abs(observed - expected_formatted) > tolerance then
+      error("la lectura formateada no coincide para "
+        .. WAVESHAPER_PARAMETER_NAMES[parameter_index])
+    end
+  end
+end
+
+local function validate_waveshaper_parameters(params)
+  if type(params) ~= "table" then
+    error("parameters de Waveshaper debe ser un objeto")
+  end
+  return {
+    drive_percent = require_number(
+      params.drive_percent, "drive_percent", 0.0, 35.0),
+    muffle_percent = require_number(
+      params.muffle_percent, "muffle_percent", 0.0, 30.0),
+    output_gain_db = require_number(
+      params.output_gain_db, "output_gain_db", -12.0, 0.0),
+  }
+end
+
+local function apply_waveshaper_parameters(track, fx_index, spec, expected_guid)
+  require_waveshaper(track, fx_index)
+  -- Contrato conservador: estéreo, curva Type 1, limitador interno apagado y
+  -- sobremuestreo x2. La salida negativa permite una audición sin ventaja de volumen.
+  set_waveshaper_normalized(track, fx_index, 0, 0.0)
+  set_waveshaper_normalized(track, fx_index, 1, 0.0)
+  set_waveshaper_normalized(
+    track, fx_index, 2, spec.drive_percent / 100.0, spec.drive_percent, 0.051)
+  set_waveshaper_normalized(
+    track, fx_index, 3, spec.muffle_percent / 100.0, spec.muffle_percent, 0.051)
+  set_waveshaper_normalized(
+    track, fx_index, 4, (spec.output_gain_db + 25.0) / 50.0,
+    spec.output_gain_db, 0.051)
+  set_waveshaper_normalized(track, fx_index, 5, 1.0)
+  set_waveshaper_normalized(track, fx_index, 6, 1.0)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then
+    error("el GUID de JS Multi Waveshaper cambió")
+  end
   return fx
 end
 
@@ -2073,6 +2164,9 @@ function ACTIONS.add_stock_fx(params, request_id)
   elseif fx_type == "reafir" then
     plugin_name = "ReaFir (FFT EQ+Dynamics Processor) (Cockos)"
     expected_name, description = "reafir", "agregar ReaFIR"
+  elseif fx_type == "waveshaper" then
+    plugin_name = "JS: Multi Waveshaper"
+    expected_name, description = "multi waveshaper", "agregar JS Multi Waveshaper"
   else
     error("FX nativo no permitido")
   end
@@ -2148,7 +2242,8 @@ function ACTIONS.remove_track_fx(params, request_id)
       and not lower_name:find("reaverbate", 1, true)
       and not lower_name:find("readelay", 1, true)
       and not lower_name:find("reatune", 1, true)
-      and not lower_name:find("reafir", 1, true) then
+      and not lower_name:find("reafir", 1, true)
+      and not lower_name:find("multi waveshaper", 1, true) then
     error("el FX no pertenece al conjunto removible permitido")
   end
   local before_count = reaper.TrackFX_GetCount(track)
@@ -2564,6 +2659,35 @@ function ACTIONS.configure_reacomp(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_waveshaper(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local fx_index = find_fx_by_guid(track, fx_guid)
+  require_waveshaper(track, fx_index)
+  local spec = validate_waveshaper_parameters(params)
+
+  local result = run_transaction(
+    project, request_id, "configurar saturación JS Multi Waveshaper", function()
+      local fx = apply_waveshaper_parameters(track, fx_index, spec, fx_guid)
+      return {
+        project_ref = ref,
+        fx = fx,
+        requested = spec,
+        safety = {
+          processing = "stereo",
+          waveshaper = "type_1",
+          limiter = false,
+          oversample_x2 = true,
+          output_compensation_is_estimate = true,
+        },
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 

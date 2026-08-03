@@ -265,6 +265,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Configura ReaComp en unidades musicales mediante un adaptador explícito.",
         ),
         ActionSpec(
+            "configure_waveshaper",
+            True,
+            VerificationLevel.STATE,
+            "Configura saturación JS tipada con salida compensada y relee sus parámetros.",
+        ),
+        ActionSpec(
             "configure_reagate",
             True,
             VerificationLevel.STATE,
