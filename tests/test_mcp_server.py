@@ -22,6 +22,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_fx_parameter_domain",
                 "preview_saturation_proposal",
                 "preview_vocal_rider_proposal",
+                "preview_dynamic_resonance_proposal",
                 "preview_audio_integrity",
                 "preview_project_item_audio_integrity",
                 "get_render_settings",
@@ -30,6 +31,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "get_track_items",
                 "inspect_track_volume_envelope",
                 "apply_vocal_rider_envelope",
+                "apply_dynamic_resonance_proposal",
                 "configure_item_fades",
                 "create_track",
                 "set_track_pan",
@@ -52,6 +54,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "add_instrument",
                 "configure_reacomp",
                 "configure_waveshaper",
+                "configure_dynamic_resonance",
                 "configure_reagate",
                 "configure_deesser",
                 "configure_reaeq_band",
@@ -94,6 +97,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_fx_parameter_domain"].annotations.read_only_hint)
         self.assertTrue(tools["preview_saturation_proposal"].annotations.read_only_hint)
         self.assertTrue(tools["preview_vocal_rider_proposal"].annotations.read_only_hint)
+        self.assertTrue(
+            tools["preview_dynamic_resonance_proposal"].annotations.read_only_hint
+        )
         self.assertTrue(tools["preview_audio_integrity"].annotations.read_only_hint)
         self.assertTrue(
             tools["preview_project_item_audio_integrity"].annotations.read_only_hint
@@ -106,6 +112,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["inspect_track_volume_envelope"].annotations.read_only_hint)
         self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.read_only_hint)
         self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.destructive_hint)
+        self.assertFalse(
+            tools["apply_dynamic_resonance_proposal"].annotations.destructive_hint
+        )
         self.assertTrue(tools["configure_item_fades"].annotations.idempotent_hint)
         self.assertFalse(tools["configure_item_fades"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
@@ -125,6 +134,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["create_effect_bus"].annotations.idempotent_hint)
         self.assertTrue(tools["configure_ambience_fx"].annotations.idempotent_hint)
         self.assertTrue(tools["configure_waveshaper"].annotations.idempotent_hint)
+        self.assertTrue(
+            tools["configure_dynamic_resonance"].annotations.idempotent_hint
+        )
         self.assertFalse(tools["create_bus_send"].annotations.idempotent_hint)
         self.assertFalse(tools["remove_bus_send"].annotations.idempotent_hint)
         self.assertFalse(tools["remove_effect_bus"].annotations.idempotent_hint)

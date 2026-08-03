@@ -13,7 +13,7 @@ registra por separado.
 | ReaEQ | filtros y balance tonal | implementado y verificado | por canción |
 | ReaComp | control dinámico | implementado y verificado | por canción |
 | ReaGate | limpieza supervisada | implementado y verificado | por canción |
-| ReaXcomp | de-esser | implementado y verificado | por canción |
+| ReaXcomp | de-esser y resonancia dinámica amplia | implementado | por canción |
 | ReaVerbate | reverb en bus | implementado y verificado | por canción |
 | ReaDelay | delay musical en bus | implementado y verificado | por canción |
 | ReaLimit | limitador de master | implementado y verificado | por entrega |
@@ -66,6 +66,18 @@ Referencias de diseño para carga genérica de presets:
 - [Bonfire REAPER MCP](https://github.com/bonfire-systems/reaper-mcp)
 
 ## Procesadores siguientes
+
+### Resonancia dinámica con ReaXcomp
+
+- [x] Confirmar instalación y estructura pública estable de 51 parámetros.
+- [x] Analizar prominencia espectral y variación temporal por rol.
+- [x] Proponer una única banda amplia; fuente desconocida se bloquea y Suno
+      recibe ratio 1,25 con umbral más alto.
+- [x] Mantener bandas 1, 3 y 4 transparentes, sin makeup, feedback ni auto-release.
+- [x] Validar en vivo alta, 51 parámetros releídos y retirada transaccional
+      sobre Guitar, conservando el ReaFIR original.
+- [ ] Audicionar A/B con loudness igualado; una nota musical puede parecer una
+      resonancia y ReaXcomp no sustituye un EQ dinámico quirúrgico.
 
 ### Saturación
 

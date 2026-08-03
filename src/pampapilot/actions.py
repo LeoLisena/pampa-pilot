@@ -301,6 +301,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Aplica una propuesta de-esser aprobada y vigente mediante GUID.",
         ),
         ActionSpec(
+            "configure_dynamic_resonance",
+            True,
+            VerificationLevel.STATE,
+            "Configura una banda media de ReaXcomp y mantiene transparentes las demás.",
+        ),
+        ActionSpec(
+            "apply_dynamic_resonance_proposal",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una propuesta vigente de control dinámico de resonancias.",
+        ),
+        ActionSpec(
             "configure_reaeq_band",
             True,
             VerificationLevel.STATE,

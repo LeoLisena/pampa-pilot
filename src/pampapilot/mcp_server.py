@@ -18,6 +18,10 @@ from .deesser_proposal import (
     build_deesser_application_payload,
     propose_deesser as build_deesser_proposal,
 )
+from .dynamic_resonance import (
+    analyze_dynamic_resonance,
+    build_dynamic_resonance_application_payload,
+)
 from .gate_proposal import (
     build_reagate_application_payload,
     propose_reagate as build_reagate_proposal,
@@ -139,6 +143,18 @@ class WaveshaperParameters(BaseModel):
     drive_percent: Annotated[float, Field(ge=0.0, le=35.0)]
     muffle_percent: Annotated[float, Field(ge=0.0, le=30.0)] = 0.0
     output_gain_db: Annotated[float, Field(ge=-12.0, le=0.0)]
+
+
+class DynamicResonanceParameters(BaseModel):
+    lower_crossover_hz: Annotated[float, Field(ge=80.0, le=8000.0)]
+    upper_crossover_hz: Annotated[float, Field(ge=120.0, le=12000.0)]
+    band3_top_frequency_hz: Annotated[float, Field(ge=500.0, le=22000.0)]
+    threshold_db: Annotated[float, Field(ge=-45.0, le=-8.0)]
+    ratio: Annotated[float, Field(ge=1.0, le=2.5)]
+    knee_db: Annotated[float, Field(ge=0.0, le=12.0)]
+    attack_ms: Annotated[float, Field(ge=1.0, le=100.0)]
+    release_ms: Annotated[float, Field(ge=20.0, le=500.0)]
+    rms_ms: Annotated[float, Field(ge=0.0, le=100.0)]
 
 
 class VocalRiderPoint(BaseModel):
@@ -597,6 +613,57 @@ def apply_deesser_proposal(
     )
     return _call(
         "apply_deesser_proposal",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+        timeout_seconds=30.0,
+    )
+
+
+@mcp.tool(
+    title="Previsualizar control dinámico de resonancias",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_dynamic_resonance_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "guitar", "strings", "keys"],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Busca una sola prominencia variable y propone una audición ReaXcomp."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return analyze_dynamic_resonance(audio_path, role, source_kind)
+
+
+@mcp.tool(
+    title="Aplicar control dinámico de resonancias aprobado",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_dynamic_resonance_proposal(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "guitar", "strings", "keys"],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Recalcula la evidencia y aplica únicamente la propuesta vigente."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    proposal = analyze_dynamic_resonance(audio_path, role, source_kind)
+    payload = build_dynamic_resonance_application_payload(
+        proposal, approved_proposal_id, fx_guid
+    )
+    return _call(
+        "apply_dynamic_resonance_proposal",
         {"project_ref": project_ref, "track_guid": track_guid, **payload},
         timeout_seconds=30.0,
     )
@@ -1811,6 +1878,34 @@ def configure_deesser(
             "attack_ms": attack_ms,
             "release_ms": release_ms,
             "rms_ms": rms_ms,
+        },
+    )
+
+
+@mcp.tool(
+    title="Configurar resonancia dinámica ReaXcomp",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_dynamic_resonance(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    parameters: DynamicResonanceParameters,
+) -> dict[str, Any]:
+    """Controla sólo la banda 2 y deja transparentes las otras tres."""
+
+    return _call(
+        "configure_dynamic_resonance",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "parameters": parameters.model_dump(),
         },
     )
 

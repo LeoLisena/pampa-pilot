@@ -159,6 +159,37 @@ confirmó ratio 1:1, threshold 0 dB y auto makeup desactivado en las bandas 1 a
 0 ms y estado activo. La instancia temporal se retiró por GUID y la pista volvió
 a sus dos FX originales.
 
+## Resonancia dinámica amplia con ReaXcomp
+
+El puente 0.23.0 reutiliza la estructura verificada de ReaXcomp para controlar
+una sola prominencia espectral variable. El motor mide el p90 del STFT dentro
+del rango del rol, lo compara con una curva espectral suavizada y comprueba que
+la energía de la banda cambie en el tiempo. Devuelve como máximo una propuesta
+`audition_only`, ligada al SHA-256 del WAV.
+
+La banda 2 queda delimitada por dos crossovers alrededor del candidato. Bandas
+1, 3 y 4 se fijan en ganancia 0 dB, ratio 1:1, threshold 0 dB, makeup apagado,
+auto-release apagado, detector feedback apagado y estado activo. La banda 2
+usa los valores propuestos; el plugin queda normal, 100 % wet y sin delta.
+
+Para Suno se exige mayor prominencia y variación, con ratio 1,25:1, ataque 20
+ms, release 180 ms y umbral p92. Una fuente orgánica parte de ratio 1,6:1 y
+umbral p82. Fuente desconocida se bloquea. Esto es control multibanda amplio,
+no un EQ dinámico quirúrgico; toda propuesta requiere escucha A/B.
+
+El stem `3 Guitar.wav` produjo un candidato centrado en 234,375 Hz, banda
+165,7-331,5 Hz, prominencia 16,12 dB y variación 10,76 dB. Para Suno propuso
+threshold -30,7 dB y ratio 1,25:1.
+
+La validación en vivo 0.23.0 creó una ReaXcomp temporal con GUID
+`{0C9852A6-365D-41A8-A788-160091DF6CA1}`. Una lectura independiente confirmó
+los 51 parámetros: crossover inferior 165,7 Hz; crossover superior 332,4 Hz
+(cuantización interna del pedido 331,5); threshold -30,7 dB; ratio 1,25:1;
+knee 4 dB; attack/RMS 20 ms; release 180 ms; makeup, auto-release y feedback
+apagados; Wet 100 %, bypass y delta normales. Las bandas transparentes quedaron
+en 0 dB y 1:1. La transacción se deshizo y Guitar volvió a su único ReaFIR
+original, con volumen -7 dB y el resto del estado intacto.
+
 ## Buses de ambiente
 
 Los buses separan la señal directa del retorno: `create_effect_bus` crea una

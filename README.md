@@ -72,6 +72,9 @@ El puente 0.22.0 amplía la lectura de ítems con fuente, offset y playrate. El
 motor puede así revisar límites duros, impulsos, silencios internos, clipping y
 colas activas exactamente en el tramo usado por REAPER. Sólo propone revisión;
 no corta ni repara audio automáticamente.
+El puente 0.23.0 incorpora control dinámico de una resonancia amplia con
+ReaXcomp: propone una única banda de audición, mantiene las otras tres
+transparentes y usa un perfil especialmente suave para Suno.
 
 ## Decisiones iniciales
 

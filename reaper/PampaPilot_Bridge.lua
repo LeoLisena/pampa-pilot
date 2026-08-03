@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.22.0"
+local BRIDGE_VERSION = "0.23.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -1106,6 +1106,80 @@ local function apply_deesser_parameters(track, fx_index, spec, expected_guid)
   set_boolean_parameter(track, fx_index, "47:_4_Active", true)
   local fx = read_fx(track, fx_index, true)
   if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaXcomp cambió") end
+  return fx
+end
+
+local function validate_dynamic_resonance_parameters(params)
+  if type(params) ~= "table" then
+    error("parameters de resonancia dinámica debe ser un objeto")
+  end
+  local spec = {
+    lower_crossover_hz = require_number(
+      params.lower_crossover_hz, "lower_crossover_hz", 80.0, 8000.0),
+    upper_crossover_hz = require_number(
+      params.upper_crossover_hz, "upper_crossover_hz", 120.0, 12000.0),
+    band3_top_frequency_hz = require_number(
+      params.band3_top_frequency_hz, "band3_top_frequency_hz", 500.0, 22000.0),
+    threshold_db = require_number(params.threshold_db, "threshold_db", -45.0, -8.0),
+    ratio = require_number(params.ratio, "ratio", 1.0, 2.5),
+    knee_db = require_number(params.knee_db, "knee_db", 0.0, 12.0),
+    attack_ms = require_number(params.attack_ms, "attack_ms", 1.0, 100.0),
+    release_ms = require_number(params.release_ms, "release_ms", 20.0, 500.0),
+    rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 100.0),
+  }
+  if spec.lower_crossover_hz >= spec.upper_crossover_hz
+      or spec.upper_crossover_hz >= spec.band3_top_frequency_hz then
+    error("los crossovers de resonancia dinámica deben ser crecientes")
+  end
+  return spec
+end
+
+local function set_reaxcomp_band_transparent(track, fx_index, band)
+  local base = (band - 1) * 12
+  set_numeric_parameter(
+    track, fx_index, tostring(base + 1) .. ":_" .. band .. "_Gain", 0.0, 0.11)
+  set_numeric_parameter(
+    track, fx_index, tostring(base + 2) .. ":_" .. band .. "_Threshold", 0.0, 0.11)
+  set_numeric_parameter(
+    track, fx_index, tostring(base + 3) .. ":_" .. band .. "_Ratio", 1.0, 0.011)
+  set_numeric_parameter(
+    track, fx_index, tostring(base + 4) .. ":_" .. band .. "_Knee", 0.0, 0.011)
+  set_boolean_parameter(
+    track, fx_index, tostring(base + 8) .. ":_" .. band .. "_Make_Up_Gain", false)
+  set_boolean_parameter(
+    track, fx_index, tostring(base + 9) .. ":_" .. band .. "_Auto_Release", false)
+  set_boolean_parameter(
+    track, fx_index, tostring(base + 10) .. ":_" .. band .. "_FeedBack_Detector", false)
+  set_boolean_parameter(
+    track, fx_index, tostring(base + 11) .. ":_" .. band .. "_Active", true)
+end
+
+local function apply_dynamic_resonance_parameters(
+    track, fx_index, spec, expected_guid)
+  require_reaxcomp(track, fx_index)
+  for band = 1, 4 do set_reaxcomp_band_transparent(track, fx_index, band) end
+  set_numeric_parameter(
+    track, fx_index, "0:_1_Band_top_frequency", spec.lower_crossover_hz,
+    math.max(1.01, spec.lower_crossover_hz * 0.001))
+  set_numeric_parameter(
+    track, fx_index, "12:_2_Band_top_frequency", spec.upper_crossover_hz,
+    math.max(1.01, spec.upper_crossover_hz * 0.001))
+  set_numeric_parameter(
+    track, fx_index, "24:_3_Band_top_frequency", spec.band3_top_frequency_hz,
+    math.max(1.01, spec.band3_top_frequency_hz * 0.001))
+  set_numeric_parameter(track, fx_index, "14:_2_Threshold", spec.threshold_db, 0.11)
+  set_numeric_parameter(track, fx_index, "15:_2_Ratio", spec.ratio, 0.011)
+  set_numeric_parameter(track, fx_index, "16:_2_Knee", spec.knee_db, 0.011)
+  set_numeric_parameter(track, fx_index, "17:_2_Attack", spec.attack_ms, 0.11, "ms")
+  set_numeric_parameter(track, fx_index, "18:_2_Release", spec.release_ms, 1.01, "ms")
+  set_numeric_parameter(track, fx_index, "19:_2_RMS", spec.rms_ms, 0.11, "ms")
+  set_normalized_parameter(track, fx_index, "48:bypass", 0.0)
+  set_normalized_parameter(track, fx_index, "49:wet", 1.0)
+  set_normalized_parameter(track, fx_index, "50:delta", 0.0)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then
+    error("el GUID de ReaXcomp cambió")
+  end
   return fx
 end
 
@@ -2986,6 +3060,86 @@ function ACTIONS.configure_deesser(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_dynamic_resonance(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  require_reaxcomp(track, fx_index)
+  local spec = validate_dynamic_resonance_parameters(params.parameters)
+  local result = run_transaction(
+    project, request_id, "configurar resonancia dinámica ReaXcomp", function()
+      local fx = apply_dynamic_resonance_parameters(
+        track, fx_index, spec, params.fx_guid)
+      return {
+        project_ref = ref,
+        fx = fx,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
+end
+
+function ACTIONS.apply_dynamic_resonance_proposal(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, track_index = find_track_by_guid(project, params.track_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-f]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal minúsculo")
+  end
+  local mode = require_string(params.mode, "mode", 32)
+  if mode ~= "reuse_existing" and mode ~= "create_new" then
+    error("modo de resonancia dinámica no permitido")
+  end
+  local spec = validate_dynamic_resonance_parameters(params.parameters)
+  local requested_guid = nil
+  if mode == "reuse_existing" then
+    requested_guid = require_string(params.fx_guid, "fx_guid", 64)
+    require_reaxcomp(track, find_fx_by_guid(track, requested_guid))
+  else
+    if params.fx_guid ~= nil then error("create_new no admite fx_guid") end
+    if count_fx_by_name_fragment(track, "reaxcomp") > 0 then
+      error("la pista ya contiene ReaXcomp; vincule su GUID para evitar duplicados")
+    end
+  end
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar resonancia dinámica " .. proposal_id, function()
+      local fx_index
+      if mode == "reuse_existing" then
+        fx_index = find_fx_by_guid(track, requested_guid)
+      else
+        fx_index = reaper.TrackFX_AddByName(track, "ReaXcomp (Cockos)", false, -1)
+        if fx_index < 0 then error("REAPER no pudo agregar ReaXcomp") end
+      end
+      local expected_count = before_count + (mode == "create_new" and 1 or 0)
+      if reaper.TrackFX_GetCount(track) ~= expected_count then
+        error("la cantidad de FX no coincide al aplicar resonancia dinámica")
+      end
+      local fx = apply_dynamic_resonance_parameters(
+        track, fx_index, spec, requested_guid)
+      local track_state = read_track(track, track_index)
+      if track_state.fx_count ~= expected_count then
+        error("la lectura posterior de la pista no coincide")
+      end
+      return {
+        project_ref = ref,
+        proposal_id = proposal_id,
+        source_sha256 = source_sha256,
+        mode = mode,
+        track = track_state,
+        fx = fx,
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 
