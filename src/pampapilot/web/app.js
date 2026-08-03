@@ -1,4 +1,4 @@
-const state = { project: null, history: [], proposal: null };
+const state = { project: null, history: [], proposal: null, conversationId: null };
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -39,6 +39,14 @@ async function refreshStatus() {
 }
 
 function renderProject(project) {
+  if (state.project?.name !== project.name) {
+    let conversations = {};
+    try { conversations = JSON.parse(localStorage.getItem('pampapilot.conversations') || '{}'); } catch { conversations = {}; }
+    state.conversationId = conversations[project.name] || crypto.randomUUID();
+    conversations[project.name] = state.conversationId;
+    localStorage.setItem('pampapilot.conversations', JSON.stringify(conversations));
+    state.history = [];
+  }
   state.project = project;
   $('#project-title').textContent = project.name;
   $('#project-bpm').textContent = project.tempo_bpm ? `${project.tempo_bpm} BPM` : 'BPM sin definir';
@@ -149,18 +157,26 @@ $('#chat-form').addEventListener('submit', async event => {
   addMessage('user', message);
   input.value = '';
   const pending = addMessage('assistant', 'Pensando…', true);
+  const slowNotice = window.setTimeout(() => {
+    if (pending.isConnected) pending.querySelector('p').textContent = 'Gemma está procesando el contexto del proyecto…';
+  }, 12000);
   try {
     const result = await api('/api/chat', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project_name: state.project.name, message, history: state.history.slice(-8)})
+      body: JSON.stringify({project_name: state.project.name, message, history: state.history.slice(-8), conversation_id: state.conversationId})
     });
     pending.remove();
+    window.clearTimeout(slowNotice);
     addMessage('assistant', result.message);
     state.history.push({role: 'user', content: message}, {role: 'assistant', content: result.message});
     renderProposal(result.proposal);
   } catch (error) {
     pending.remove();
-    addMessage('assistant', `No pude completar la consulta: ${error.message}`);
+    window.clearTimeout(slowNotice);
+    const detail = /timed out|timeout/i.test(error.message)
+      ? 'El modelo tardó más que el límite configurado. Aumentalo en Configuración o probá un modelo más rápido.'
+      : error.message;
+    addMessage('assistant', `No pude completar la consulta: ${detail}`);
   }
 });
 
@@ -181,7 +197,7 @@ $('#settings-form').addEventListener('submit', async event => {
   try {
     const result = await api('/api/settings/brain', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true'})
+      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true', timeout_seconds: Number($('#brain-timeout').value)})
     });
     $('#brain-token').value = '';
     resultElement.textContent = result.status.connected ? 'Conexión correcta.' : `Configuración guardada: ${result.status.error}`;
@@ -224,6 +240,7 @@ async function loadSettings() {
     $('#brain-url').value = settings.base_url;
     $('#brain-model').value = settings.model;
     $('#brain-auth').value = settings.authentication_required ? 'true' : 'false';
+    $('#brain-timeout').value = String(settings.timeout_seconds || 180);
   } catch { /* defaults remain visible */ }
 }
 

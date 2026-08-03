@@ -33,7 +33,9 @@ class LMStudioClientTests(unittest.TestCase):
 
     @patch("pampapilot.lmstudio_client.urlopen")
     def test_lists_models_without_exposing_token(self, mocked_urlopen):
-        mocked_urlopen.return_value = _Response({"data": [{"id": "google/gemma"}]})
+        mocked_urlopen.return_value = _Response(
+            {"models": [{"key": "google/gemma", "type": "llm"}, {"key": "embed", "type": "embedding"}]}
+        )
         client = LMStudioClient(
             LMStudioConfig(base_url="http://localhost:1234", token="private")
         )
@@ -45,7 +47,7 @@ class LMStudioClientTests(unittest.TestCase):
     @patch("pampapilot.lmstudio_client.urlopen")
     def test_extracts_openai_compatible_chat_content(self, mocked_urlopen):
         mocked_urlopen.return_value = _Response(
-            {"choices": [{"message": {"content": '{"message":"ok"}'}}]}
+            {"output": [{"type": "reasoning", "content": "hidden"}, {"type": "message", "content": '{"message":"ok"}'}], "response_id": "resp_test", "stats": {"tokens_per_second": 12.0}}
         )
         client = LMStudioClient(
             LMStudioConfig(
@@ -56,17 +58,43 @@ class LMStudioClientTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            client.chat([{"role": "user", "content": "hola"}]),
+            client.chat(
+                [{"role": "system", "content": "JSON"}, {"role": "user", "content": "hola"}],
+                max_tokens=220,
+                reasoning="off",
+            ),
             '{"message":"ok"}',
         )
         request = mocked_urlopen.call_args.args[0]
         body = json.loads(io.BytesIO(request.data).read().decode("utf-8"))
         self.assertEqual(body["model"], "gemma")
+        self.assertEqual(body["max_output_tokens"], 220)
+        self.assertEqual(body["reasoning"], "off")
+        self.assertEqual(body["system_prompt"], "JSON")
+        self.assertFalse(body["store"])
         self.assertFalse(body["stream"])
 
     @patch("pampapilot.lmstudio_client.urlopen")
+    def test_stateful_chat_sends_previous_response_without_system_prompt(self, mocked_urlopen):
+        mocked_urlopen.return_value = _Response(
+            {"output": [{"type": "message", "content": "ok"}], "response_id": "resp_next", "stats": {}}
+        )
+        client = LMStudioClient(
+            LMStudioConfig(base_url="http://localhost:1234", model="gemma", authentication_required=False)
+        )
+        result = client.chat_result(
+            [{"role": "user", "content": "seguí"}],
+            previous_response_id="resp_previous",
+        )
+        body = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(body["previous_response_id"], "resp_previous")
+        self.assertNotIn("system_prompt", body)
+        self.assertTrue(body["store"])
+        self.assertEqual(result.response_id, "resp_next")
+
+    @patch("pampapilot.lmstudio_client.urlopen")
     def test_rejects_malformed_model_response(self, mocked_urlopen):
-        mocked_urlopen.return_value = _Response({"models": []})
+        mocked_urlopen.return_value = _Response({"data": []})
         with self.assertRaises(LMStudioError):
             LMStudioClient(LMStudioConfig(authentication_required=False)).list_models()
 

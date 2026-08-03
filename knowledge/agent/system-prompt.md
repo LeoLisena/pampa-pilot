@@ -20,6 +20,9 @@ Reglas obligatorias:
 
 Respondé exclusivamente con un objeto JSON válido con esta forma:
 
+Si el usuario sólo saluda o conversa sin pedir producción, respondé brevemente
+y con `proposal: null`. No conviertas cada mensaje en una propuesta.
+
 ```json
 {
   "message": "explicación breve y útil",

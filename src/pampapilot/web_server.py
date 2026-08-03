@@ -20,8 +20,11 @@ from pydantic import BaseModel, Field
 
 from .agent_context import (
     build_agent_messages,
+    build_context_update_message,
     build_project_context,
+    compact_project_context,
     parse_agent_response,
+    request_needs_deep_context,
 )
 from .bridge_client import BridgeClient
 from .lmstudio_client import (
@@ -43,6 +46,7 @@ class BrainSettingsInput(BaseModel):
     model: Annotated[str, Field(max_length=512)] = ""
     token: Annotated[str | None, Field(max_length=4096)] = None
     authentication_required: bool = True
+    timeout_seconds: Annotated[float, Field(ge=15, le=300)] = 180.0
 
 
 class HistoryMessage(BaseModel):
@@ -54,6 +58,7 @@ class ChatInput(BaseModel):
     project_name: Annotated[str, Field(min_length=1, max_length=128)]
     message: Annotated[str, Field(min_length=1, max_length=8_000)]
     history: Annotated[list[HistoryMessage], Field(max_length=20)] = []
+    conversation_id: Annotated[str, Field(min_length=1, max_length=64)] = "default"
 
 
 class ProposalDecision(BaseModel):
@@ -75,8 +80,12 @@ class RuntimeState:
                 "PAMPAPILOT_LMSTUDIO_REQUIRE_AUTH", "true"
             ).casefold()
             not in {"0", "false", "no"},
+            timeout_seconds=float(
+                os.environ.get("PAMPAPILOT_LMSTUDIO_TIMEOUT_SECONDS", "180")
+            ),
         )
         self._proposals: dict[str, dict[str, Any]] = {}
+        self._conversations: dict[tuple[str, str], dict[str, str]] = {}
 
     def brain(self) -> LMStudioConfig:
         with self._lock:
@@ -94,6 +103,7 @@ class RuntimeState:
                 model=value.model.strip(),
                 token=token,
                 authentication_required=value.authentication_required,
+                timeout_seconds=value.timeout_seconds,
             ).validated()
             return self._brain
 
@@ -105,6 +115,7 @@ class RuntimeState:
             "model": config.model,
             "authentication_configured": bool(config.token),
             "authentication_required": config.authentication_required,
+            "timeout_seconds": config.timeout_seconds,
         }
 
     def add_proposal(self, proposal: dict[str, Any]) -> str:
@@ -117,6 +128,26 @@ class RuntimeState:
                 "executable": False,
             }
         return proposal_id
+
+    def conversation(
+        self, conversation_id: str, project_name: str
+    ) -> dict[str, str] | None:
+        with self._lock:
+            value = self._conversations.get((conversation_id, project_name))
+            return None if value is None else dict(value)
+
+    def save_conversation(
+        self,
+        conversation_id: str,
+        project_name: str,
+        response_id: str,
+        context_level: str,
+    ) -> None:
+        with self._lock:
+            self._conversations[(conversation_id, project_name)] = {
+                "response_id": response_id,
+                "context_level": context_level,
+            }
 
     def decide(self, proposal_id: str, decision: str) -> dict[str, Any]:
         with self._lock:
@@ -349,14 +380,64 @@ def create_project(
 @app.post("/api/chat")
 async def chat(value: ChatInput) -> dict[str, Any]:
     try:
-        context = build_project_context(_validate_song_name(value.project_name))
-        messages = build_agent_messages(
-            context,
-            value.message,
-            [item.model_dump() for item in value.history],
+        project_name = _validate_song_name(value.project_name)
+        deep_context = request_needs_deep_context(value.message)
+        conversation = runtime.conversation(value.conversation_id, project_name)
+        context_level = (
+            "deep"
+            if deep_context
+            or (conversation is not None and conversation.get("context_level") == "deep")
+            else "compact"
         )
-        raw = await asyncio.to_thread(LMStudioClient(runtime.brain()).chat, messages)
-        response = parse_agent_response(raw)
+        if conversation is None:
+            context = build_project_context(project_name)
+            if not deep_context:
+                context = compact_project_context(context)
+            messages = build_agent_messages(
+                context,
+                value.message,
+                [item.model_dump() for item in value.history],
+            )
+        elif deep_context and conversation.get("context_level") != "deep":
+            context = build_project_context(project_name)
+            messages = [
+                {
+                    "role": "user",
+                    "content": build_context_update_message(context, value.message),
+                }
+            ]
+        else:
+            messages = [{"role": "user", "content": value.message}]
+        result = await asyncio.to_thread(
+            LMStudioClient(runtime.brain()).chat_result,
+            messages,
+            max_tokens=900 if deep_context else 220,
+            reasoning="on" if deep_context else "off",
+            previous_response_id=None
+            if conversation is None
+            else conversation["response_id"],
+            store=True,
+        )
+        response = parse_agent_response(result.content)
+        response["context_level"] = context_level
+        response["timing"] = {
+            key: result.stats.get(key)
+            for key in (
+                "input_tokens",
+                "total_output_tokens",
+                "reasoning_output_tokens",
+                "tokens_per_second",
+                "time_to_first_token_seconds",
+            )
+            if key in result.stats
+        }
+        if result.response_id:
+            runtime.save_conversation(
+                value.conversation_id,
+                project_name,
+                result.response_id,
+                context_level,
+            )
     except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LMStudioError as exc:

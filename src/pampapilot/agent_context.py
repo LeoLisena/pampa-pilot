@@ -12,6 +12,13 @@ from .media_discovery import WORKSPACE_ROOT, discover_song_media
 
 SYSTEM_PROMPT_PATH = WORKSPACE_ROOT / "knowledge" / "agent" / "system-prompt.md"
 SECTION_RE = re.compile(r"^\s*\[([^\]]+)]\s*$")
+DEEP_CONTEXT_TERMS = {
+    "analiza", "analizá", "analysis", "arreglo", "batería", "bateria",
+    "compres", "coro", "dinámica", "dinamica", "eq", "estructura",
+    "filtro", "frecuencia", "guitarra", "letra", "master", "mezcla",
+    "mejora", "problema", "producción", "produccion", "sección", "seccion",
+    "stem", "verso", "voz",
+}
 
 
 def load_system_prompt(path: Path = SYSTEM_PROMPT_PATH) -> str:
@@ -111,6 +118,42 @@ def build_agent_messages(
             messages.append({"role": role, "content": content[:8_000]})
     messages.append({"role": "user", "content": user_message.strip()[:8_000]})
     return messages
+
+
+def request_needs_deep_context(user_message: str) -> bool:
+    normalized = user_message.casefold()
+    return any(term in normalized for term in DEEP_CONTEXT_TERMS)
+
+
+def compact_project_context(project_context: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep orientation data for casual chat without sending lyrics or file lists."""
+
+    song = project_context.get("song", {})
+    stems = project_context.get("stems", [])
+    lyrics = project_context.get("lyrics", {})
+    return {
+        "song": dict(song) if isinstance(song, Mapping) else {},
+        "stem_count": len(stems) if isinstance(stems, list) else 0,
+        "sections": list(lyrics.get("sections", []))
+        if isinstance(lyrics, Mapping)
+        else [],
+        "verification": dict(project_context.get("verification", {})),
+        "context_level": "compact",
+    }
+
+
+def build_context_update_message(
+    project_context: Mapping[str, Any], user_message: str
+) -> str:
+    """Add richer deterministic context while preserving a stateful conversation."""
+
+    return (
+        "PampaPilot actualizó el contexto técnico del mismo proyecto. "
+        "No es una canción ni una conversación nueva. Usá estos datos como evidencia:\n"
+        + json.dumps(project_context, ensure_ascii=False, separators=(",", ":"))
+        + "\n\nPedido actual del usuario: "
+        + user_message.strip()
+    )
 
 
 def parse_agent_response(raw: str) -> dict[str, Any]:

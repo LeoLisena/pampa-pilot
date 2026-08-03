@@ -14,6 +14,13 @@ class LMStudioError(RuntimeError):
     """LM Studio was unavailable or returned an invalid response."""
 
 
+@dataclass(frozen=True, slots=True)
+class LMStudioChatResult:
+    content: str
+    response_id: str | None
+    stats: Mapping[str, Any]
+
+
 def normalize_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
     parsed = urlparse(value)
@@ -30,7 +37,7 @@ class LMStudioConfig:
     model: str = ""
     token: str = ""
     authentication_required: bool = True
-    timeout_seconds: float = 45.0
+    timeout_seconds: float = 180.0
 
     def validated(self) -> "LMStudioConfig":
         normalize_base_url(self.base_url)
@@ -89,48 +96,95 @@ class LMStudioClient:
         return decoded
 
     def list_models(self, *, timeout_seconds: float = 2.0) -> list[str]:
-        response = self._request("/v1/models", timeout_seconds=timeout_seconds)
-        if "data" not in response:
-            raise LMStudioError("LM Studio model list has no data field")
-        values = response["data"]
+        response = self._request("/api/v1/models", timeout_seconds=timeout_seconds)
+        if "models" not in response:
+            raise LMStudioError("LM Studio model list has no models field")
+        values = response["models"]
         if not isinstance(values, list):
             raise LMStudioError("LM Studio model list is malformed")
         return [
-            str(item["id"])
+            str(item["key"])
             for item in values
-            if isinstance(item, Mapping) and isinstance(item.get("id"), str)
+            if isinstance(item, Mapping)
+            and item.get("type") == "llm"
+            and isinstance(item.get("key"), str)
         ]
 
-    def chat(self, messages: Sequence[Mapping[str, str]]) -> str:
+    def chat_result(
+        self,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        max_tokens: int = 900,
+        reasoning: str = "off",
+        previous_response_id: str | None = None,
+        store: bool = True,
+    ) -> LMStudioChatResult:
+        if not 32 <= max_tokens <= 4096:
+            raise ValueError("max_tokens must be between 32 and 4096")
+        if reasoning not in {"off", "on", "low", "medium", "high"}:
+            raise ValueError("unsupported reasoning setting")
         model = self.config.model
         if not model:
             models = self.list_models()
             if not models:
                 raise LMStudioError("LM Studio has no loaded model")
             model = models[0]
-        response = self._request(
-            "/v1/chat/completions",
-            {
-                "model": model,
-                "messages": [dict(message) for message in messages],
-                "temperature": 0.2,
-                "stream": False,
-            },
+        system_prompt = "\n\n".join(
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "system"
         )
-        choices = response.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise LMStudioError("LM Studio response contains no choices")
-        first = choices[0]
-        message = first.get("message") if isinstance(first, Mapping) else None
-        content = message.get("content") if isinstance(message, Mapping) else None
-        if isinstance(content, str) and content.strip():
-            return content.strip()
-        if isinstance(content, list):
-            text = "".join(
-                str(part.get("text", ""))
-                for part in content
-                if isinstance(part, Mapping)
-            ).strip()
-            if text:
-                return text
+        transcript = []
+        for message in messages:
+            role = message.get("role")
+            if role not in {"user", "assistant"}:
+                continue
+            label = "Usuario" if role == "user" else "Asistente"
+            transcript.append(f"{label}: {message.get('content', '')}")
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": "\n\n".join(transcript),
+            "temperature": 0.2,
+            "max_output_tokens": max_tokens,
+            "reasoning": reasoning,
+            "store": store,
+            "stream": False,
+        }
+        if system_prompt:
+            payload["system_prompt"] = system_prompt
+        if previous_response_id:
+            payload["previous_response_id"] = previous_response_id
+        response = self._request("/api/v1/chat", payload)
+        output = response.get("output")
+        if not isinstance(output, list):
+            raise LMStudioError("LM Studio response contains no output list")
+        text = "\n".join(
+            str(item.get("content", ""))
+            for item in output
+            if isinstance(item, Mapping) and item.get("type") == "message"
+        ).strip()
+        if text:
+            response_id = response.get("response_id")
+            stats = response.get("stats", {})
+            return LMStudioChatResult(
+                content=text,
+                response_id=response_id if isinstance(response_id, str) else None,
+                stats=dict(stats) if isinstance(stats, Mapping) else {},
+            )
         raise LMStudioError("LM Studio returned an empty assistant message")
+
+    def chat(
+        self,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        max_tokens: int = 900,
+        reasoning: str = "off",
+    ) -> str:
+        """Compatibility helper for callers that only need text."""
+
+        return self.chat_result(
+            messages,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
+            store=False,
+        ).content

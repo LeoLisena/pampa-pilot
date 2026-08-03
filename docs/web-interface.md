@@ -41,8 +41,15 @@ En **Configuración** se definen:
 - URL de LM Studio, por ejemplo `http://192.168.1.19:1234`;
 - identificador del modelo, por ejemplo `google/gemma-4-31b`;
 - seguridad con token (predeterminada) o servidor sin autenticación;
+- tiempo máximo de generación, 180 segundos de forma predeterminada;
 - token, que se conserva sólo en memoria hasta cerrar PampaPilot.
 
-El adaptador usa `/v1/models` y `/v1/chat/completions`. El LLM recibe un system
+El adaptador usa la API nativa `/api/v1/models` y `/api/v1/chat`. En conversación
+simple desactiva el razonamiento; en análisis musical lo habilita. El LLM recibe un system
 prompt versionado, contexto sin rutas locales, letra, secciones e inventario de
 medios. Los WAV permanecen en el motor y no se envían al modelo conversacional.
+El primer turno almacena una sesión local en LM Studio; los turnos siguientes
+envían sólo el mensaje nuevo y `previous_response_id`. Si cambia el nivel de
+contexto, PampaPilot agrega los nuevos datos dentro de la misma conversación.
+Sólo al cambiar de proyecto crea otro chat; el navegador recuerda el identificador
+de conversación asignado a cada canción.

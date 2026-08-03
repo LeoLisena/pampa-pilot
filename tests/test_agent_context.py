@@ -5,9 +5,12 @@ import unittest
 
 from pampapilot.agent_context import (
     build_agent_messages,
+    build_context_update_message,
     build_project_context,
+    compact_project_context,
     lyric_sections,
     parse_agent_response,
+    request_needs_deep_context,
 )
 
 
@@ -71,6 +74,27 @@ class AgentContextTests(unittest.TestCase):
         result = parse_agent_response("Una respuesta no estructurada")
         self.assertFalse(result["structured"])
         self.assertIsNone(result["proposal"])
+
+    def test_routes_greetings_to_compact_context_and_analysis_to_deep_context(self):
+        self.assertFalse(request_needs_deep_context("hola, ¿cómo estás?"))
+        self.assertTrue(request_needs_deep_context("analizá la mezcla y la voz"))
+        compact = compact_project_context(
+            {
+                "song": {"title": "Test", "tempo_bpm": 85},
+                "stems": [{"name": "Voz"}],
+                "lyrics": {"sections": ["Verse"], "text": "secreto"},
+                "verification": {"signal_analyzed": False},
+            }
+        )
+        self.assertEqual(compact["stem_count"], 1)
+        self.assertNotIn("lyrics", compact)
+
+    def test_context_update_explicitly_preserves_same_project(self):
+        message = build_context_update_message(
+            {"song": {"title": "Test"}}, "analizá la voz"
+        )
+        self.assertIn("mismo proyecto", message)
+        self.assertIn("analizá la voz", message)
 
 
 if __name__ == "__main__":
