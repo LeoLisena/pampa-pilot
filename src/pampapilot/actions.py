@@ -43,6 +43,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Lee ajustes de render y cadena del master sin abrir ni modificar el diálogo.",
         ),
         ActionSpec(
+            "get_master_track_state",
+            False,
+            VerificationLevel.STATE,
+            "Lee identidad, estado y FX de la pista master.",
+        ),
+        ActionSpec(
             "create_track",
             True,
             VerificationLevel.STATE,
@@ -125,6 +131,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Agrega un efecto nativo permitido y devuelve su identidad.",
+        ),
+        ActionSpec(
+            "add_master_stock_fx",
+            True,
+            VerificationLevel.STATE,
+            "Agrega ReaLimit al master y devuelve parámetros e identidad verificables.",
+        ),
+        ActionSpec(
+            "apply_mastering_limiter",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una propuesta aprobada de ReaLimit al master en una transacción.",
         ),
         ActionSpec(
             "add_instrument",

@@ -18,6 +18,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "health_check",
                 "get_project_state",
                 "get_render_settings",
+                "get_master_track_state",
                 "get_track_state",
                 "create_track",
                 "set_track_pan",
@@ -27,6 +28,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_listening_preparation",
                 "apply_track_mix_batch",
                 "add_stock_fx",
+                "add_master_stock_fx",
                 "add_instrument",
                 "configure_reacomp",
                 "configure_reaeq_band",
@@ -41,6 +43,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "analyze_midi",
                 "preview_master_delivery_qc",
                 "preview_project_master_delivery_qc",
+                "preview_mastering_proposal",
+                "apply_mastering_proposal",
                 "propose_track_processing",
                 "apply_processing_proposal",
                 "diagnose_song",
@@ -56,6 +60,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["health_check"].annotations.read_only_hint)
         self.assertTrue(tools["get_project_state"].annotations.read_only_hint)
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
+        self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)
@@ -68,6 +73,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["apply_track_mix_batch"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
+        self.assertFalse(tools["add_master_stock_fx"].annotations.destructive_hint)
+        self.assertFalse(tools["add_master_stock_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["add_instrument"].annotations.idempotent_hint)
         self.assertFalse(tools["add_instrument"].annotations.destructive_hint)
         self.assertTrue(tools["configure_reacomp"].annotations.idempotent_hint)
@@ -88,6 +95,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
         self.assertTrue(tools["preview_master_delivery_qc"].annotations.read_only_hint)
         self.assertTrue(tools["preview_project_master_delivery_qc"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_mastering_proposal"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_mastering_proposal"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_mastering_proposal"].annotations.destructive_hint)
+        self.assertFalse(tools["apply_mastering_proposal"].annotations.idempotent_hint)
         self.assertTrue(tools["propose_track_processing"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)

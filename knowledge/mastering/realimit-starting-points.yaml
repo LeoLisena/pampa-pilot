@@ -1,0 +1,29 @@
+id: mastering.realimit.supervised-safety
+title: Punto de partida supervisado para ReaLimit en el master
+stage: mastering
+purpose: Crear margen prudente de pico sin maximizar loudness por rutina.
+profile:
+  safety_margin_below_platform_peak_db: 0.5
+  release_ms: 50.0
+  threshold_follows_ceiling: true
+principles:
+  - Threshold igual a ceiling evita agregar ganancia intencionalmente.
+  - Release de 50 ms permanece dentro del rango observable del ReaLimit VST instalado.
+  - El limitador sólo se propone cuando el true peak estimado supera la guía seleccionada.
+  - La mejora se verifica renderizando y volviendo a medir el archivo, no leyendo sólo el plugin.
+  - True peak y performance de ReaLimit no están expuestos como parámetros VST automatizables.
+rejection_conditions:
+  - Distorsión, bombeo o pérdida audible de transitorios.
+  - Reducción excesiva para cumplir una cifra que no responde a la intención artística.
+verification:
+  - Releer threshold, ceiling, release, GUID y estado online en REAPER.
+  - Renderizar un WAV de prueba y volver a medir LUFS y true peak.
+  - Comparar activado y bypass a volumen percibido semejante.
+sources:
+  - title: REAPER User Guide - ReaLimit Brickwall Limiter
+    url: https://www.reaper.fm/userguide.php
+    kind: official_product_documentation
+  - title: Flujo supervisado y conservador indicado por el usuario
+    kind: user_requirement
+confidence: working_defaults
+reviewed_at: 2026-08-02

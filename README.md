@@ -31,12 +31,15 @@ valores se vuelven a leer dentro de una única transacción reversible.
 Desde el puente 0.7.0 se separan además instrumentos de efectos: `add_instrument` admite
 inicialmente ReaSynth y comprueba que REAPER lo registre realmente como VSTi de
 la pista, sin acoplar la interfaz a nombres arbitrarios de plugins.
-El puente 0.10.1 aplica una propuesta aprobada completa en una sola transacción,
+El puente 0.11.1 aplica una propuesta aprobada completa en una sola transacción,
 reutiliza FX mediante GUID explícitos y rechaza duplicaciones implícitas.
 La acción persistente publica `on` en la columna `State` de REAPER mientras el
 puente está activo y limpia el indicador al terminar.
 También lee de forma no destructiva los ajustes de render y la cadena FX del
 master para vincularlos con el control técnico del archivo final.
+También genera propuestas conservadoras de ReaLimit desde el análisis del
+archivo, exige el ID exacto aprobado, aplica parámetros en unidades legibles,
+vuelve a leerlos y conserva una transacción de deshacer segura.
 
 ## Decisiones iniciales
 
@@ -61,6 +64,8 @@ La estrategia híbrida de procesamiento por stem está en
 [docs/song-processing-strategy.md](docs/song-processing-strategy.md).
 El control offline del master para distribución está en
 [docs/master-delivery-qc.md](docs/master-delivery-qc.md).
+El limitador de mastering supervisado está en
+[docs/mastering-proposals.md](docs/mastering-proposals.md).
 Las propuestas auditables de procesamiento están en
 [docs/processing-proposals.md](docs/processing-proposals.md).
 El diagnóstico híbrido de stems está en

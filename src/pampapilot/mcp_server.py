@@ -18,6 +18,10 @@ from .mastering_qc import (
     build_master_delivery_qc,
     build_project_master_delivery_qc,
 )
+from .mastering_proposal import (
+    build_mastering_application_payload,
+    build_mastering_proposal,
+)
 from .midi_cleanup import (
     CleanupConfig,
     analyze_midi_file,
@@ -178,6 +182,52 @@ def preview_project_master_delivery_qc(
     audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
     file_report = build_master_delivery_qc(audio_path, profile_name=profile)
     return build_project_master_delivery_qc(render_reply["result"], file_report)
+
+
+@mcp.tool(
+    title="Previsualizar propuesta de limitador del master",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_mastering_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    profile: Literal["spotify_streaming"] = "spotify_streaming",
+) -> dict[str, Any]:
+    """Propone ReaLimit sólo si el archivo medido necesita margen de pico."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
+    file_report = build_master_delivery_qc(audio_path, profile_name=profile)
+    return build_mastering_proposal(file_report)
+
+
+@mcp.tool(
+    title="Aplicar propuesta aprobada de limitador del master",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_mastering_proposal(
+    project_ref: str,
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    profile: Literal["spotify_streaming"] = "spotify_streaming",
+) -> dict[str, Any]:
+    """Recalcula y aplica exactamente una propuesta ReaLimit vigente."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
+    file_report = build_master_delivery_qc(audio_path, profile_name=profile)
+    proposal = build_mastering_proposal(file_report)
+    payload = build_mastering_application_payload(
+        proposal, approved_proposal_id, fx_guid
+    )
+    return _call(
+        "apply_mastering_limiter",
+        {"project_ref": project_ref, **payload},
+        timeout_seconds=30.0,
+    )
 
 
 @mcp.tool(
@@ -477,6 +527,16 @@ def get_render_settings(project_ref: str) -> dict[str, Any]:
 
 
 @mcp.tool(
+    title="Leer pista master",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_master_track_state(project_ref: str) -> dict[str, Any]:
+    """Lee estado, identidad y parámetros FX del master sin modificarlo."""
+
+    return _call("get_master_track_state", {"project_ref": project_ref})
+
+
+@mcp.tool(
     title="Leer pista por GUID",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -683,6 +743,27 @@ def add_stock_fx(
     return _call(
         "add_stock_fx",
         {"project_ref": project_ref, "track_guid": track_guid, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Agregar ReaLimit al master",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def add_master_stock_fx(
+    project_ref: str,
+    fx_type: Literal["realimit"],
+) -> dict[str, Any]:
+    """Agrega un ReaLimit único al master y devuelve su GUID y parámetros."""
+
+    return _call(
+        "add_master_stock_fx",
+        {"project_ref": project_ref, "fx_type": fx_type},
     )
 
 

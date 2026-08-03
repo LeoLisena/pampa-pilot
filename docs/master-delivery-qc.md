@@ -44,7 +44,7 @@ debajo de la recomendación del perfil y requiere revisión en el master final.
 
 ## Validación vinculada con REAPER
 
-El puente 0.10.1 leyó el proyecto `Mi Pequeño Sol - MIDI Validation` sin abrir el
+El puente 0.11.1 leyó el proyecto `Mi Pequeño Sol - MIDI Validation` sin abrir el
 diálogo de render ni cambiar el estado. REAPER informó master mix estéreo,
 normalización y dither desactivados, sin FX en el master, proyecto modificado,
 sample rate delegado y destino/patrón vacíos.
