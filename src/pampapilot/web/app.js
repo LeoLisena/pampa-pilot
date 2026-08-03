@@ -180,6 +180,23 @@ $('#chat-form').addEventListener('submit', async event => {
   }
 });
 
+$('#chat-input').addEventListener('keydown', event => {
+  if (
+    event.key === 'Enter'
+    && !event.shiftKey
+    && !event.isComposing
+  ) {
+    event.preventDefault();
+    $('#chat-form').requestSubmit();
+  }
+});
+
+$('#chat-input').addEventListener('input', event => {
+  const input = event.currentTarget;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 110)}px`;
+});
+
 $('#analyze-project').addEventListener('click', () => {
   if (!state.project) return;
   $('#chat-input').value = 'Analizá los stems del proyecto y proponé el próximo paso más útil.';
