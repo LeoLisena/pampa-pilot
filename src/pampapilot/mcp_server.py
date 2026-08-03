@@ -30,6 +30,7 @@ from .song_preparation import (
     build_song_manifest,
     prepare_song as write_prepared_song,
 )
+from .song_diagnosis import diagnose_song as build_song_diagnosis
 
 
 mcp = MCPServer(
@@ -84,6 +85,11 @@ class MidiImportItem(BaseModel):
 class ProcessingFxBinding(BaseModel):
     processor: Literal["reaeq", "reacomp"]
     fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None
+
+
+class StemSourceOverride(BaseModel):
+    track_name: Annotated[str, Field(min_length=1, max_length=128)]
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"]
 
 
 def _call(
@@ -290,6 +296,30 @@ def prepare_song(
     return write_prepared_song(
         song_name,
         _song_config(bpm, numerator, denominator, source_kind, analysis_level),
+    )
+
+
+@mcp.tool(
+    title="Diagnosticar mezcla completa por procedencia",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def diagnose_song(
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    default_source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+    source_overrides: Annotated[
+        list[StemSourceOverride] | None, Field(max_length=128)
+    ] = None,
+) -> dict[str, Any]:
+    """Reanaliza stems y genera hallazgos; no escribe ni modifica REAPER."""
+
+    return build_song_diagnosis(
+        song_name,
+        bpm,
+        default_source_kind,
+        [override.model_dump() for override in (source_overrides or [])],
     )
 
 

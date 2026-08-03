@@ -30,6 +30,9 @@ def test_analyze_audio_file_reports_objective_signal_metrics(tmp_path: Path) -> 
     assert result["samples_at_or_above_0_dbfs"] == 0
     assert result["stereo_correlation"] == pytest.approx(1.0)
     assert len(result["sha256"]) == 64
+    assert result["active_rms_spread_db"] == pytest.approx(0.0, abs=0.01)
+    assert result["spectral_centroid_hz"] == pytest.approx(440.0, abs=3.0)
+    assert result["spectral_band_energy_ratio"]["low_mid_250_500"] > 0.99
 
 
 def test_write_analysis_creates_utf8_json(tmp_path: Path) -> None:

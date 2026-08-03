@@ -1,0 +1,33 @@
+id: workflow.source-aware-song-diagnosis
+title: Diagnóstico de canción según procedencia de cada stem
+stage: mixing
+purpose: Evitar tratar igual un stem procesado de Suno y una grabación orgánica.
+policies:
+  suno_stems:
+    posture: preserve_existing_processing
+    default_action: No procesar por rutina; corregir sólo problemas observables.
+    dynamics: Una dinámica estrecha puede ser procesamiento previo y no justifica más compresión.
+  organic_multitrack:
+    posture: corrective_then_aesthetic
+    default_action: Revisar captura, ruido, dinámica y resonancias antes del tratamiento estético.
+    dynamics: Una dinámica amplia puede justificar automatización o compresión supervisada.
+  unknown:
+    posture: measure_and_ask
+    default_action: Medir y solicitar procedencia antes de aplicar procesamiento dependiente de la fuente.
+thresholds:
+  dc_offset_absolute: 0.01
+  stereo_correlation_mono_risk: -0.25
+  vocal_low_frequency_ratio_p95: 0.35
+  vocal_sibilance_ratio_p95: 0.60
+  organic_active_rms_spread_wide_db: 12.0
+  active_rms_spread_already_controlled_db: 4.0
+  spectral_relationship_priority_score: 0.65
+limitations:
+  - La similitud espectral no demuestra enmascaramiento perceptual.
+  - Las bandas de energía no identifican por sí solas resonancias molestas.
+  - Los artefactos de separación de Suno pueden producir falsos positivos.
+sources:
+  - title: Flujo híbrido indicado por el usuario
+    kind: user_requirement
+confidence: working_policy
+reviewed_at: 2026-08-02

@@ -55,6 +55,8 @@ La materialización MIDI verificable está en
 [docs/midi-import.md](docs/midi-import.md).
 Las propuestas auditables de procesamiento están en
 [docs/processing-proposals.md](docs/processing-proposals.md).
+El diagnóstico híbrido de stems está en
+[docs/song-diagnosis.md](docs/song-diagnosis.md).
 
 ## Entorno Python reproducible
 
