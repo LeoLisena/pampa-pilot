@@ -77,6 +77,27 @@ def test_bass_proposal_does_not_invent_an_eq_step() -> None:
     assert proposal["chain"][0]["profile"] == "bass_control"
 
 
+@pytest.mark.parametrize(
+    ("role", "eq_profile", "compressor_profile"),
+    [
+        ("guitar", "acoustic_guitar_cleanup", "acoustic_guitar_gentle"),
+        ("strings", "strings_cleanup", "strings_gentle"),
+    ],
+)
+def test_organic_string_roles_have_conservative_audition_profiles(
+    role: str, eq_profile: str, compressor_profile: str
+) -> None:
+    proposal = build_processing_proposal(
+        _metrics(), role, "organic_multitrack", knowledge_root=KNOWLEDGE_ROOT
+    )
+
+    assert [step["profile"] for step in proposal["chain"]] == [
+        eq_profile,
+        compressor_profile,
+    ]
+    assert all(step["decision"] == "audition_only" for step in proposal["chain"])
+
+
 def test_missing_knowledge_is_rejected() -> None:
     with pytest.raises(KnowledgeError, match="does not exist"):
         build_processing_proposal(

@@ -55,6 +55,8 @@ La gatera y el manifiesto de sesión están en
 [docs/song-preparation.md](docs/song-preparation.md).
 La materialización MIDI verificable está en
 [docs/midi-import.md](docs/midi-import.md).
+La estrategia híbrida de procesamiento por stem está en
+[docs/song-processing-strategy.md](docs/song-processing-strategy.md).
 Las propuestas auditables de procesamiento están en
 [docs/processing-proposals.md](docs/processing-proposals.md).
 El diagnóstico híbrido de stems está en

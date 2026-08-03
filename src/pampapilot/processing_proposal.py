@@ -11,7 +11,9 @@ from .audio_analysis import analyze_audio_file
 from .media_discovery import WORKSPACE_ROOT
 
 
-TrackRole = Literal["lead_vocal", "backing_vocals", "bass", "drums"]
+TrackRole = Literal[
+    "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings"
+]
 SourceKind = Literal["suno_stems", "organic_multitrack", "unknown"]
 
 COMPRESSOR_PROFILES = {
@@ -19,10 +21,14 @@ COMPRESSOR_PROFILES = {
     "backing_vocals": "backing_vocals_glue",
     "bass": "bass_control",
     "drums": "drum_bus_gentle",
+    "guitar": "acoustic_guitar_gentle",
+    "strings": "strings_gentle",
 }
 EQ_PROFILES = {
     "lead_vocal": "lead_vocal_cleanup",
     "backing_vocals": "backing_vocals_cleanup",
+    "guitar": "acoustic_guitar_cleanup",
+    "strings": "strings_cleanup",
 }
 
 

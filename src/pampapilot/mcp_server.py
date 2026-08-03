@@ -35,6 +35,7 @@ from .song_preparation import (
     prepare_song as write_prepared_song,
 )
 from .song_diagnosis import diagnose_song as build_song_diagnosis
+from .song_processing_strategy import build_song_processing_strategy
 
 
 mcp = MCPServer(
@@ -150,7 +151,9 @@ def analyze_midi(
 )
 def propose_track_processing(
     file_path: Annotated[str, Field(min_length=1, max_length=4096)],
-    role: Literal["lead_vocal", "backing_vocals", "bass", "drums"],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings"
+    ],
     source_kind: Literal[
         "suno_stems", "organic_multitrack", "unknown"
     ] = "unknown",
@@ -174,7 +177,9 @@ def apply_processing_proposal(
     project_ref: str,
     track_guid: Annotated[str, Field(min_length=1, max_length=64)],
     file_path: Annotated[str, Field(min_length=1, max_length=4096)],
-    role: Literal["lead_vocal", "backing_vocals", "bass", "drums"],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings"
+    ],
     approved_proposal_id: Annotated[
         str, Field(min_length=24, max_length=24, pattern=r"^[0-9a-f]{24}$")
     ],
@@ -325,6 +330,31 @@ def diagnose_song(
         default_source_kind,
         [override.model_dump() for override in (source_overrides or [])],
     )
+
+
+@mcp.tool(
+    title="Previsualizar estrategia de procesamiento por stem",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_song_processing_strategy(
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    default_source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+    source_overrides: Annotated[
+        list[StemSourceOverride] | None, Field(max_length=128)
+    ] = None,
+) -> dict[str, Any]:
+    """Propone sólo audiciones respaldadas por diagnóstico; no modifica REAPER."""
+
+    diagnosis = build_song_diagnosis(
+        song_name,
+        bpm,
+        default_source_kind,
+        [override.model_dump() for override in (source_overrides or [])],
+    )
+    return build_song_processing_strategy(diagnosis)
 
 
 def _build_current_production_plan(

@@ -30,6 +30,28 @@ profiles:
       enabled: true
     audition_range_hz: [80.0, 140.0]
     rejection_condition: Los coros pierden cuerpo o el cambio no mejora el conjunto.
+  acoustic_guitar_cleanup:
+    intent: Audicionar si retirar energía subsónica de captura mejora headroom sin adelgazar la guitarra.
+    starting_values:
+      band_type: high_pass
+      band_index: 0
+      frequency_hz: 70.0
+      gain_db: 0.0
+      q: 0.71
+      enabled: true
+    audition_range_hz: [50.0, 100.0]
+    rejection_condition: La guitarra pierde cuerpo, golpe o fundamento musical.
+  strings_cleanup:
+    intent: Audicionar sólo la eliminación de energía subsónica ajena al instrumento o la sala.
+    starting_values:
+      band_type: high_pass
+      band_index: 0
+      frequency_hz: 45.0
+      gain_db: 0.0
+      q: 0.71
+      enabled: true
+    audition_range_hz: [30.0, 80.0]
+    rejection_condition: Se altera el fundamento de instrumentos graves, el cuerpo o la naturalidad de la sala.
 sources:
   - title: Flujo supervisado solicitado por el usuario
     kind: user_requirement

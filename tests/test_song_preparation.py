@@ -47,6 +47,8 @@ def test_classifies_common_stem_names() -> None:
     assert classify_stem(Path("4 Bass.wav")) == "bass"
     assert classify_stem(Path("5 Drums.wav")) == "drums"
     assert classify_stem(Path("2 Keyboard.wav")) == "keys"
+    assert classify_stem(Path("6 Cuerdas.wav")) == "strings"
+    assert classify_stem(Path("7 Cello.wav")) == "strings"
 
 
 def test_preview_builds_import_plan_without_writing(tmp_path: Path) -> None:

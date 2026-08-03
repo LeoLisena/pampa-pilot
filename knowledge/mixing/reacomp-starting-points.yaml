@@ -67,6 +67,38 @@ profiles:
       auto_makeup: false
       auto_release: false
     expected_gain_reduction_db: 1.0_to_2.0_on_peaks
+  acoustic_guitar_gentle:
+    intent: Estabilizar una guitarra orgánica sin borrar ataque, rasgueo ni dinámica musical.
+    starting_values:
+      threshold_db: -12.0
+      ratio: 1.5
+      attack_ms: 25.0
+      release_ms: 150.0
+      knee_db: 3.0
+      rms_ms: 5.0
+      auto_makeup: false
+      auto_release: false
+    fine_tuning:
+      - Priorizar clip gain o automatización si la interpretación tiene saltos aislados.
+      - Aumentar attack si el rasgueo pierde definición.
+      - Reducir ratio o subir threshold si desaparece la expresividad.
+    expected_gain_reduction_db: 1.0_to_3.0_on_peaks
+  strings_gentle:
+    intent: Controlar variaciones amplias conservando arco, ataque y evolución natural.
+    starting_values:
+      threshold_db: -12.0
+      ratio: 1.5
+      attack_ms: 30.0
+      release_ms: 180.0
+      knee_db: 3.0
+      rms_ms: 10.0
+      auto_makeup: false
+      auto_release: false
+    fine_tuning:
+      - Preferir automatización para frases aisladas antes de comprimir todo el stem.
+      - Aumentar release si la respiración musical se vuelve inestable.
+      - Subir threshold si se aplana el crescendo o la articulación.
+    expected_gain_reduction_db: 1.0_to_3.0_on_peaks
 current_validation:
   song: Mi Pequeño Sol
   track: Vocals

@@ -75,6 +75,11 @@ def classify_stem(path: Path) -> str:
         return "drums"
     if any(token in name for token in ("percussion", "percusion", "percusión")):
         return "percussion"
+    if any(
+        token in name
+        for token in ("strings", "string", "cuerdas", "violin", "viola", "cello")
+    ):
+        return "strings"
     if any(token in name for token in ("guitar", "guitarra")):
         return "guitar"
     if any(token in name for token in ("keyboard", "piano", "keys", "teclado")):
