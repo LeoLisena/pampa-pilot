@@ -29,6 +29,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_track_mix_batch",
                 "add_stock_fx",
                 "add_master_stock_fx",
+                "restore_candidate_render_settings",
+                "remove_master_fx",
                 "add_instrument",
                 "configure_reacomp",
                 "configure_reaeq_band",
@@ -43,6 +45,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "analyze_midi",
                 "preview_master_delivery_qc",
                 "preview_project_master_delivery_qc",
+                "render_and_verify_master_candidate",
                 "preview_mastering_proposal",
                 "apply_mastering_proposal",
                 "propose_track_processing",
@@ -75,6 +78,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
         self.assertFalse(tools["add_master_stock_fx"].annotations.destructive_hint)
         self.assertFalse(tools["add_master_stock_fx"].annotations.idempotent_hint)
+        self.assertTrue(tools["restore_candidate_render_settings"].annotations.idempotent_hint)
+        self.assertFalse(tools["restore_candidate_render_settings"].annotations.destructive_hint)
+        self.assertFalse(tools["remove_master_fx"].annotations.idempotent_hint)
+        self.assertFalse(tools["remove_master_fx"].annotations.destructive_hint)
         self.assertFalse(tools["add_instrument"].annotations.idempotent_hint)
         self.assertFalse(tools["add_instrument"].annotations.destructive_hint)
         self.assertTrue(tools["configure_reacomp"].annotations.idempotent_hint)
@@ -95,6 +102,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
         self.assertTrue(tools["preview_master_delivery_qc"].annotations.read_only_hint)
         self.assertTrue(tools["preview_project_master_delivery_qc"].annotations.read_only_hint)
+        self.assertFalse(tools["render_and_verify_master_candidate"].annotations.read_only_hint)
+        self.assertFalse(tools["render_and_verify_master_candidate"].annotations.destructive_hint)
+        self.assertFalse(tools["render_and_verify_master_candidate"].annotations.idempotent_hint)
         self.assertTrue(tools["preview_mastering_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_mastering_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_mastering_proposal"].annotations.destructive_hint)

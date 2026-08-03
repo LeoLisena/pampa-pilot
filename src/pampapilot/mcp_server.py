@@ -13,6 +13,7 @@ from .media_discovery import (
     discover_song_media as discover_song_media_files,
     resolve_input_file,
     resolve_output_directory,
+    resolve_output_file,
 )
 from .mastering_qc import (
     build_master_delivery_qc,
@@ -37,6 +38,7 @@ from .production_plan import (
     build_listening_preparation_payload,
     build_production_plan,
 )
+from .render_workflow import build_rendered_master_candidate_report
 from .song_preparation import (
     SongPreparationConfig,
     build_song_manifest,
@@ -103,6 +105,24 @@ class ProcessingFxBinding(BaseModel):
 class StemSourceOverride(BaseModel):
     track_name: Annotated[str, Field(min_length=1, max_length=128)]
     source_kind: Literal["suno_stems", "organic_multitrack", "unknown"]
+
+
+class RenderSettingsSnapshot(BaseModel):
+    render_settings_flags: Annotated[float, Field(ge=0, le=1_048_575)]
+    render_bounds_flag: Annotated[float, Field(ge=0, le=7)]
+    render_channels: Annotated[float, Field(ge=1, le=64)]
+    render_sample_rate_hz: Annotated[float, Field(ge=0, le=192_000)]
+    render_start_seconds: Annotated[float, Field(ge=0, le=86_400)]
+    render_end_seconds: Annotated[float, Field(ge=0, le=86_400)]
+    render_tail_flags: Annotated[float, Field(ge=0, le=63)]
+    render_tail_ms: Annotated[float, Field(ge=0, le=600_000)]
+    render_add_to_project_flags: Annotated[float, Field(ge=0, le=3)]
+    render_dither_flags: Annotated[float, Field(ge=0, le=31)]
+    render_normalize_flags: Annotated[float, Field(ge=0, le=16_777_215)]
+    render_directory: Annotated[str, Field(max_length=4096)]
+    render_pattern: Annotated[str, Field(max_length=512)]
+    render_format_configuration: Annotated[str, Field(max_length=512)]
+    render_secondary_format_configuration: Annotated[str, Field(max_length=512)]
 
 
 def _call(
@@ -182,6 +202,107 @@ def preview_project_master_delivery_qc(
     audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
     file_report = build_master_delivery_qc(audio_path, profile_name=profile)
     return build_project_master_delivery_qc(render_reply["result"], file_report)
+
+
+@mcp.tool(
+    title="Renderizar y verificar candidato de master",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def render_and_verify_master_candidate(
+    project_ref: str,
+    output_file: Annotated[str, Field(min_length=1, max_length=4096)],
+    sample_rate_hz: Annotated[int, Field(ge=44100, le=192000)] = 48000,
+    profile: Literal["spotify_streaming"] = "spotify_streaming",
+) -> dict[str, Any]:
+    """Renderiza un WAV único en REAPER, lo mide y vincula su procedencia."""
+
+    output_path = resolve_output_file(
+        output_file, suffixes={".wav"}, require_absent=True
+    )
+    render_reply = _call(
+        "render_master_candidate",
+        {
+            "project_ref": project_ref,
+            "output_file": str(output_path),
+            "sample_rate_hz": sample_rate_hz,
+        },
+        timeout_seconds=900.0,
+    )
+    report: dict[str, Any] | None = None
+    analysis_error: Exception | None = None
+    try:
+        rendered_path = resolve_input_file(output_path, suffixes={".wav"})
+        file_report = build_master_delivery_qc(
+            rendered_path, profile_name=profile
+        )
+        report = build_rendered_master_candidate_report(render_reply, file_report)
+    except Exception as exc:
+        analysis_error = exc
+    snapshot = render_reply["result"].get("previous_render_settings")
+    try:
+        restore_reply = _call(
+            "restore_render_settings",
+            {
+                "project_ref": project_ref,
+                "output_file": str(output_path),
+                "snapshot": snapshot,
+            },
+            timeout_seconds=30.0,
+        )
+    except Exception as exc:
+        if report is not None:
+            report["render_settings_restoration"] = {
+                "state_verified": False,
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            }
+            return report
+        return {
+            "schema_version": "0.1",
+            "kind": "pampapilot_rendered_master_candidate_analysis_failed",
+            "render_reply": render_reply,
+            "error": {
+                "type": type(analysis_error).__name__,
+                "message": str(analysis_error),
+            },
+            "render_settings_restoration": {
+                "state_verified": False,
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            },
+            "verification": {
+                "state_verified": True,
+                "signal_verified": False,
+                "perceptually_evaluated": False,
+            },
+        }
+    if report is not None:
+        report["render_settings_restoration"] = {
+            "state_verified": restore_reply["observations"]["state_verified"],
+            "request_id": restore_reply["request_id"],
+        }
+        return report
+    return {
+        "schema_version": "0.1",
+        "kind": "pampapilot_rendered_master_candidate_analysis_failed",
+        "render_reply": render_reply,
+        "error": {
+            "type": type(analysis_error).__name__,
+            "message": str(analysis_error),
+        },
+        "render_settings_restoration": {
+            "state_verified": restore_reply["observations"]["state_verified"],
+            "request_id": restore_reply["request_id"],
+        },
+        "verification": {
+            "state_verified": True,
+            "signal_verified": False,
+            "perceptually_evaluated": False,
+        },
+    }
 
 
 @mcp.tool(
@@ -764,6 +885,55 @@ def add_master_stock_fx(
     return _call(
         "add_master_stock_fx",
         {"project_ref": project_ref, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Restaurar ajustes de render",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def restore_candidate_render_settings(
+    project_ref: str,
+    output_file: Annotated[str, Field(min_length=1, max_length=4096)],
+    snapshot: RenderSettingsSnapshot,
+) -> dict[str, Any]:
+    """Restaura el snapshot previo sólo si el destino actual aún coincide."""
+
+    output_path = resolve_input_file(output_file, suffixes={".wav"})
+    return _call(
+        "restore_render_settings",
+        {
+            "project_ref": project_ref,
+            "output_file": str(output_path),
+            "snapshot": snapshot.model_dump(),
+        },
+        timeout_seconds=30.0,
+    )
+
+
+@mcp.tool(
+    title="Quitar ReaLimit del master",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def remove_master_fx(
+    project_ref: str,
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Quita exclusivamente la instancia ReaLimit identificada por GUID."""
+
+    return _call(
+        "remove_master_fx",
+        {"project_ref": project_ref, "fx_guid": fx_guid},
     )
 
 

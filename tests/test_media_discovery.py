@@ -9,6 +9,7 @@ from pampapilot.media_discovery import (
     discover_song_media,
     resolve_input_file,
     resolve_output_directory,
+    resolve_output_file,
 )
 
 
@@ -47,10 +48,23 @@ class MediaDiscoveryTests(unittest.TestCase):
                 resolve_output_directory(sessions / "Song", workspace_root=root),
                 (sessions / "Song").resolve(),
             )
+            candidate = sessions / "Song" / "master.wav"
+            self.assertEqual(
+                resolve_output_file(
+                    candidate, workspace_root=root, suffixes={".wav"}
+                ),
+                candidate.resolve(),
+            )
+            candidate.parent.mkdir()
+            candidate.touch()
+            with self.assertRaises(FileExistsError):
+                resolve_output_file(candidate, workspace_root=root)
             with self.assertRaises(MediaPathError):
                 resolve_input_file(root / "outside.mid", workspace_root=root)
             with self.assertRaises(MediaPathError):
                 resolve_output_directory(media / "outputs", workspace_root=root)
+            with self.assertRaises(MediaPathError):
+                resolve_output_file(sessions / "Song" / "master.mp3", workspace_root=root, suffixes={".wav"})
 
     def test_song_name_cannot_be_a_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

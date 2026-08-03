@@ -14,6 +14,8 @@ cambios sin guardar, normalización automática o FX del master offline.
 Una coincidencia de ruta y formato sólo demuestra consistencia de configuración.
 No demuestra que el archivo provenga del estado actual: la procedencia permanece
 sin verificar hasta que PampaPilot controle o registre el render.
+`render_and_verify_master_candidate` cubre ese caso: crea un destino único,
+ejecuta REAPER, verifica el WAV y lo hashea antes de analizarlo.
 
 ## Perfil inicial: Spotify
 
@@ -44,7 +46,7 @@ debajo de la recomendación del perfil y requiere revisión en el master final.
 
 ## Validación vinculada con REAPER
 
-El puente 0.11.1 leyó el proyecto `Mi Pequeño Sol - MIDI Validation` sin abrir el
+El puente 0.12.2 leyó el proyecto `Mi Pequeño Sol - MIDI Validation` sin abrir el
 diálogo de render ni cambiar el estado. REAPER informó master mix estéreo,
 normalización y dither desactivados, sin FX en el master, proyecto modificado,
 sample rate delegado y destino/patrón vacíos.

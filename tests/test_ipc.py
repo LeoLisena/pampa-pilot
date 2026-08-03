@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from pampapilot.ipc import FilesystemIPC
 from pampapilot.protocol import Request, Response
@@ -82,6 +83,27 @@ class FilesystemIPCTests(unittest.TestCase):
 
             with self.assertRaises(FileExistsError):
                 ipc.submit(request)
+
+    def test_wait_response_retries_transient_windows_permission_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            ipc = FilesystemIPC(Path(temporary))
+            response = Response(
+                request_id="render-1",
+                status="ok",
+                completed_at_ms=1_002,
+            )
+
+            with patch.object(
+                ipc,
+                "load_response",
+                side_effect=[PermissionError("archivo ocupado"), response],
+            ) as load_response:
+                actual = ipc.wait_response(
+                    "render-1", timeout_seconds=0.2, poll_seconds=0.001
+                )
+
+            self.assertEqual(actual, response)
+            self.assertEqual(load_response.call_count, 2)
 
 
 if __name__ == "__main__":

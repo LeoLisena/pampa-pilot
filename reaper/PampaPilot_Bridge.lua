@@ -1,10 +1,12 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.11.1"
+local BRIDGE_VERSION = "0.12.2"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
+local RENDER_PROJECT_AUTOCLOSE_COMMAND_ID = 42230
+local WAV_24_BIT_RENDER_CONFIGURATION = "ZXZhdxgAAQ=="
 local SECTION = "PampaPilotBridge"
 local INSTANCE_KEY = "active_instance"
 
@@ -229,6 +231,43 @@ local function require_allowed_project_path(value)
   return path
 end
 
+local function require_allowed_render_path(value)
+  local path = require_string(value, "output_file", 4096)
+  if path:lower():sub(-4) ~= ".wav" then
+    error("output_file debe terminar en .wav")
+  end
+  local candidate = normalized_absolute_path(path, "output_file")
+  local allowed = false
+  for _, root_value in ipairs(allowed_project_roots) do
+    local root = normalized_absolute_path(root_value, "allowed_project_roots")
+    local prefix = root .. separator
+    if candidate:sub(1, #prefix) == prefix then
+      allowed = true
+      break
+    end
+  end
+  if not allowed then error("output_file está fuera de allowed_project_roots") end
+  if file_exists(path) then error("output_file ya existe; no se sobrescribe") end
+  return path
+end
+
+local function require_allowed_existing_render_path(value)
+  local path = require_string(value, "output_file", 4096)
+  if path:lower():sub(-4) ~= ".wav" then
+    error("output_file debe terminar en .wav")
+  end
+  local candidate = normalized_absolute_path(path, "output_file")
+  local allowed = false
+  for _, root_value in ipairs(allowed_project_roots) do
+    local root = normalized_absolute_path(root_value, "allowed_project_roots")
+    local prefix = root .. separator
+    if candidate:sub(1, #prefix) == prefix then allowed = true; break end
+  end
+  if not allowed then error("output_file está fuera de allowed_project_roots") end
+  if not file_exists(path) then error("output_file no existe") end
+  return path
+end
+
 local function require_project(params)
   if type(params) ~= "table" then error("params debe ser un objeto") end
   local project, path, ref = project_context()
@@ -306,6 +345,152 @@ local function read_fx_chain(track, include_parameters)
     chain[#chain + 1] = read_fx(track, fx_index, include_parameters)
   end
   return chain
+end
+
+local function read_render_settings(project, ref)
+  local function read_string(description, optional)
+    local ok, value = reaper.GetSetProjectInfo_String(project, description, "", false)
+    if not ok and optional then return "" end
+    if not ok then error("REAPER no devolvió " .. description) end
+    return value or ""
+  end
+  local master = reaper.GetMasterTrack(project)
+  if not master then error("REAPER no devolvió la pista master") end
+  return {
+    project_ref = ref,
+    project_state_change_count = reaper.GetProjectStateChangeCount(project),
+    project_dirty = reaper.GetSetProjectInfo(project, "DIRTY", 0, false) ~= 0,
+    project_sample_rate_hz = reaper.GetSetProjectInfo(
+      project, "PROJECT_SRATE", 0, false
+    ),
+    project_sample_rate_enabled = reaper.GetSetProjectInfo(
+      project, "PROJECT_SRATE_USE", 0, false
+    ) ~= 0,
+    render_settings_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_SETTINGS", 0, false
+    ),
+    render_bounds_flag = reaper.GetSetProjectInfo(
+      project, "RENDER_BOUNDSFLAG", 0, false
+    ),
+    render_channels = reaper.GetSetProjectInfo(project, "RENDER_CHANNELS", 0, false),
+    render_sample_rate_hz = reaper.GetSetProjectInfo(
+      project, "RENDER_SRATE", 0, false
+    ),
+    render_start_seconds = reaper.GetSetProjectInfo(
+      project, "RENDER_STARTPOS", 0, false
+    ),
+    render_end_seconds = reaper.GetSetProjectInfo(
+      project, "RENDER_ENDPOS", 0, false
+    ),
+    render_tail_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_TAILFLAG", 0, false
+    ),
+    render_tail_ms = reaper.GetSetProjectInfo(project, "RENDER_TAILMS", 0, false),
+    render_add_to_project_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_ADDTOPROJ", 0, false
+    ),
+    render_dither_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_DITHER", 0, false
+    ),
+    render_normalize_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_NORMALIZE", 0, false
+    ),
+    render_directory = read_string("RENDER_FILE"),
+    render_pattern = read_string("RENDER_PATTERN"),
+    render_targets = read_string("RENDER_TARGETS", true),
+    render_format_configuration = read_string("RENDER_FORMAT"),
+    render_secondary_format_configuration = read_string("RENDER_FORMAT2", true),
+    master_fx = read_fx_chain(master, true),
+    undo_label = reaper.Undo_CanUndo2(project) or "",
+  }
+end
+
+local function read_render_configuration_snapshot(project)
+  local function read_string(description)
+    local ok, value = reaper.GetSetProjectInfo_String(project, description, "", false)
+    if not ok then error("REAPER no devolvió " .. description) end
+    return value or ""
+  end
+  return {
+    render_settings_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_SETTINGS", 0, false
+    ),
+    render_bounds_flag = reaper.GetSetProjectInfo(
+      project, "RENDER_BOUNDSFLAG", 0, false
+    ),
+    render_channels = reaper.GetSetProjectInfo(project, "RENDER_CHANNELS", 0, false),
+    render_sample_rate_hz = reaper.GetSetProjectInfo(
+      project, "RENDER_SRATE", 0, false
+    ),
+    render_start_seconds = reaper.GetSetProjectInfo(
+      project, "RENDER_STARTPOS", 0, false
+    ),
+    render_end_seconds = reaper.GetSetProjectInfo(
+      project, "RENDER_ENDPOS", 0, false
+    ),
+    render_tail_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_TAILFLAG", 0, false
+    ),
+    render_tail_ms = reaper.GetSetProjectInfo(project, "RENDER_TAILMS", 0, false),
+    render_add_to_project_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_ADDTOPROJ", 0, false
+    ),
+    render_dither_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_DITHER", 0, false
+    ),
+    render_normalize_flags = reaper.GetSetProjectInfo(
+      project, "RENDER_NORMALIZE", 0, false
+    ),
+    render_directory = read_string("RENDER_FILE"),
+    render_pattern = read_string("RENDER_PATTERN"),
+    render_format_configuration = read_string("RENDER_FORMAT"),
+    render_secondary_format_configuration = read_string("RENDER_FORMAT2"),
+  }
+end
+
+local function apply_render_configuration_snapshot(project, snapshot)
+  if type(snapshot) ~= "table" then error("snapshot debe ser un objeto") end
+  local number_fields = {
+    {"RENDER_SETTINGS", "render_settings_flags", 0, 1048575},
+    {"RENDER_BOUNDSFLAG", "render_bounds_flag", 0, 7},
+    {"RENDER_CHANNELS", "render_channels", 1, 64},
+    {"RENDER_SRATE", "render_sample_rate_hz", 0, 192000},
+    {"RENDER_STARTPOS", "render_start_seconds", 0, 86400},
+    {"RENDER_ENDPOS", "render_end_seconds", 0, 86400},
+    {"RENDER_TAILFLAG", "render_tail_flags", 0, 63},
+    {"RENDER_TAILMS", "render_tail_ms", 0, 600000},
+    {"RENDER_ADDTOPROJ", "render_add_to_project_flags", 0, 3},
+    {"RENDER_DITHER", "render_dither_flags", 0, 31},
+    {"RENDER_NORMALIZE", "render_normalize_flags", 0, 16777215},
+  }
+  for _, field in ipairs(number_fields) do
+    local value = require_number(snapshot[field[2]], field[2], field[3], field[4])
+    reaper.GetSetProjectInfo(project, field[1], value, true)
+    local observed = reaper.GetSetProjectInfo(project, field[1], 0, false)
+    if math.abs(observed - value) > 0.000001 then
+      error("REAPER no restauró " .. field[1])
+    end
+  end
+  local string_fields = {
+    {"RENDER_FILE", "render_directory", 4096},
+    {"RENDER_PATTERN", "render_pattern", 512},
+    {"RENDER_FORMAT", "render_format_configuration", 512},
+    {"RENDER_FORMAT2", "render_secondary_format_configuration", 512},
+  }
+  for _, field in ipairs(string_fields) do
+    local value = snapshot[field[2]]
+    if type(value) ~= "string" or #value > field[3] then
+      error(field[2] .. " no es texto válido")
+    end
+    local ok = reaper.GetSetProjectInfo_String(project, field[1], value, true)
+    if not ok then error("REAPER rechazó " .. field[1]) end
+    local observed_ok, observed = reaper.GetSetProjectInfo_String(
+      project, field[1], "", false
+    )
+    if not observed_ok or observed ~= value then
+      error("REAPER no restauró " .. field[1])
+    end
+  end
 end
 
 local function find_fx_by_guid(track, guid)
@@ -832,42 +1017,152 @@ end
 
 function ACTIONS.get_render_settings(params, _)
   local project, _, ref = require_project(params)
-  local function read_string(description, optional)
-    local ok, value = reaper.GetSetProjectInfo_String(project, description, "", false)
-    if not ok and optional then return "" end
-    if not ok then error("REAPER no devolvió " .. description) end
-    return value or ""
+  return read_render_settings(project, ref), observations(true)
+end
+
+function ACTIONS.render_master_candidate(params, request_id)
+  local project, project_path, ref = require_project(params)
+  if project_path == "" then error("el proyecto debe tener una ruta guardada") end
+  local play_state_before = reaper.GetPlayStateEx(project)
+  if play_state_before ~= 0 then
+    reaper.OnStopButtonEx(project)
   end
-  local master = reaper.GetMasterTrack(project)
-  if not master then error("REAPER no devolvió la pista master") end
-  return {
-    project_ref = ref,
-    project_state_change_count = reaper.GetProjectStateChangeCount(project),
-    project_dirty = reaper.GetSetProjectInfo(project, "DIRTY", 0, false) ~= 0,
-    project_sample_rate_hz = reaper.GetSetProjectInfo(project, "PROJECT_SRATE", 0, false),
-    project_sample_rate_enabled = reaper.GetSetProjectInfo(
-      project, "PROJECT_SRATE_USE", 0, false
-    ) ~= 0,
-    render_settings_flags = reaper.GetSetProjectInfo(project, "RENDER_SETTINGS", 0, false),
-    render_bounds_flag = reaper.GetSetProjectInfo(project, "RENDER_BOUNDSFLAG", 0, false),
-    render_channels = reaper.GetSetProjectInfo(project, "RENDER_CHANNELS", 0, false),
-    render_sample_rate_hz = reaper.GetSetProjectInfo(project, "RENDER_SRATE", 0, false),
-    render_start_seconds = reaper.GetSetProjectInfo(project, "RENDER_STARTPOS", 0, false),
-    render_end_seconds = reaper.GetSetProjectInfo(project, "RENDER_ENDPOS", 0, false),
-    render_tail_flags = reaper.GetSetProjectInfo(project, "RENDER_TAILFLAG", 0, false),
-    render_tail_ms = reaper.GetSetProjectInfo(project, "RENDER_TAILMS", 0, false),
-    render_add_to_project_flags = reaper.GetSetProjectInfo(
-      project, "RENDER_ADDTOPROJ", 0, false
-    ),
-    render_dither_flags = reaper.GetSetProjectInfo(project, "RENDER_DITHER", 0, false),
-    render_normalize_flags = reaper.GetSetProjectInfo(project, "RENDER_NORMALIZE", 0, false),
-    render_directory = read_string("RENDER_FILE"),
-    render_pattern = read_string("RENDER_PATTERN"),
-    render_targets = read_string("RENDER_TARGETS", true),
-    render_format_configuration = read_string("RENDER_FORMAT"),
-    render_secondary_format_configuration = read_string("RENDER_FORMAT2", true),
-    master_fx = read_fx_chain(master, true),
-  }, observations(true)
+  if reaper.GetPlayStateEx(project) ~= 0 then
+    error("REAPER no pudo detener el transporte antes de renderizar")
+  end
+  local output_file = require_allowed_render_path(params.output_file)
+  local sample_rate_hz = require_number(
+    params.sample_rate_hz, "sample_rate_hz", 44100, 192000
+  )
+  if sample_rate_hz % 1 ~= 0 then error("sample_rate_hz debe ser entero") end
+  local output_directory, output_name = output_file:match(
+    "^(.*)[\\/]([^\\/]+)%.wav$"
+  )
+  if not output_directory or output_directory == "" or not output_name
+      or output_name == "" then
+    error("output_file no contiene directorio y nombre WAV válidos")
+  end
+  if output_name:find("[%$%*%?]") then
+    error("output_file no puede contener comodines de render")
+  end
+  reaper.RecursiveCreateDirectory(output_directory, 0)
+  local previous_render_settings = read_render_configuration_snapshot(project)
+
+  local function set_number(description, value)
+    reaper.GetSetProjectInfo(project, description, value, true)
+    local observed = reaper.GetSetProjectInfo(project, description, 0, false)
+    if math.abs(observed - value) > 0.000001 then
+      error("REAPER no conservó " .. description)
+    end
+  end
+  local function set_string(description, value)
+    local ok = reaper.GetSetProjectInfo_String(project, description, value, true)
+    if not ok then error("REAPER rechazó " .. description) end
+    local observed_ok, observed = reaper.GetSetProjectInfo_String(
+      project, description, "", false
+    )
+    if not observed_ok or observed ~= value then
+      error("REAPER no conservó " .. description)
+    end
+  end
+
+  local result = run_transaction(
+    project, request_id, "renderizar candidato de master", function()
+      set_number("RENDER_SETTINGS", 0)
+      set_number("RENDER_BOUNDSFLAG", 1)
+      set_number("RENDER_CHANNELS", 2)
+      set_number("RENDER_SRATE", sample_rate_hz)
+      set_number("RENDER_TAILFLAG", 0)
+      set_number("RENDER_ADDTOPROJ", 0)
+      set_number("RENDER_DITHER", 0)
+      set_number("RENDER_NORMALIZE", 0)
+      set_string("RENDER_FILE", output_directory)
+      set_string("RENDER_PATTERN", output_name)
+      set_string("RENDER_FORMAT", WAV_24_BIT_RENDER_CONFIGURATION)
+      set_string("RENDER_FORMAT2", "")
+
+      local render_settings = read_render_settings(project, ref)
+      local targets = {}
+      for target in render_settings.render_targets:gmatch("[^;]+") do
+        targets[#targets + 1] = target
+      end
+      if #targets ~= 1
+          or normalized_absolute_path(targets[1], "render_target")
+            ~= normalized_absolute_path(output_file, "output_file") then
+        error("REAPER no resolvió exactamente el destino WAV solicitado")
+      end
+
+      local action_text = reaper.kbd_getTextFromCmd(
+        RENDER_PROJECT_AUTOCLOSE_COMMAND_ID, 0
+      )
+      if type(action_text) ~= "string" or action_text == "" then
+        error("REAPER no reconoce la acción de render automático")
+      end
+      local started_at_unix = os.time()
+      reaper.Main_OnCommandEx(RENDER_PROJECT_AUTOCLOSE_COMMAND_ID, 0, project)
+      if not file_exists(output_file) then
+        error("REAPER no creó el candidato de master")
+      end
+      local stream = io.open(output_file, "rb")
+      if not stream then error("no se pudo verificar el candidato renderizado") end
+      local output_size_bytes = stream:seek("end")
+      stream:close()
+      if not output_size_bytes or output_size_bytes <= 44 then
+        error("el candidato renderizado no contiene audio WAV válido")
+      end
+      local _, _, observed_ref = project_context()
+      if observed_ref ~= ref then error("el proyecto activo cambió durante el render") end
+      return {
+        project_ref = ref,
+        project_path = project_path,
+        output_file = output_file,
+        output_size_bytes = output_size_bytes,
+        sample_rate_hz = sample_rate_hz,
+        channels = 2,
+        wav_bit_depth = 24,
+        transport_was_stopped = play_state_before ~= 0,
+        render_started_at_unix = started_at_unix,
+        render_completed_at_unix = os.time(),
+        render_action_id = RENDER_PROJECT_AUTOCLOSE_COMMAND_ID,
+        render_action_text = action_text,
+        render_stats = "",
+        render_stats_summary = "",
+        render_settings = read_render_settings(project, ref),
+        previous_render_settings = previous_render_settings,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
+end
+
+function ACTIONS.restore_render_settings(params, request_id)
+  local project, _, ref = require_project(params)
+  local output_file = require_allowed_existing_render_path(params.output_file)
+  local current = read_render_settings(project, ref)
+  local matched = false
+  for target in current.render_targets:gmatch("[^;]+") do
+    if normalized_absolute_path(target, "render_target")
+        == normalized_absolute_path(output_file, "output_file") then
+      matched = true
+      break
+    end
+  end
+  if not matched then
+    error("los ajustes actuales ya no apuntan al candidato indicado")
+  end
+  local result = run_transaction(
+    project, request_id, "restaurar ajustes de render", function()
+      apply_render_configuration_snapshot(project, params.snapshot)
+      return {
+        project_ref = ref,
+        output_file = output_file,
+        render_settings = read_render_settings(project, ref),
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
 end
 
 function ACTIONS.get_master_track_state(params, _)
@@ -1232,6 +1527,36 @@ function ACTIONS.add_master_stock_fx(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.remove_master_fx(params, request_id)
+  local project, _, ref = require_project(params)
+  local master = reaper.GetMasterTrack(project)
+  if not master then error("REAPER no devolvió la pista master") end
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local fx_index = find_fx_by_guid(master, fx_guid)
+  local fx = require_realimit(master, fx_index)
+  local before_count = reaper.TrackFX_GetCount(master)
+  local result = run_transaction(
+    project, request_id, "quitar ReaLimit del master", function()
+      reaper.TrackFX_Delete(master, fx_index)
+      if reaper.TrackFX_GetCount(master) ~= before_count - 1 then
+        error("la cantidad de FX del master no disminuyó exactamente en uno")
+      end
+      for index = 0, reaper.TrackFX_GetCount(master) - 1 do
+        if reaper.TrackFX_GetFXGUID(master, index) == fx_guid then
+          error("ReaLimit continúa presente después de quitarlo")
+        end
+      end
+      return {
+        project_ref = ref,
+        removed_fx = fx,
+        track = read_track(master, -1),
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 

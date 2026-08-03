@@ -10,4 +10,4 @@ required = false
 default_tools_approval_mode = "writes"
 
 [mcp_servers.pampapilot.env]
-PAMPAPILOT_IPC_ROOT = "C:\\RUTA\\REAPER\\PampaPilot\\ipc"
+PAMPAPILOT_IPC_ROOT = "C:\\RUTA\\AL\\PROYECTO\\.runtime\\reaper-ipc"

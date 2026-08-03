@@ -120,7 +120,12 @@ class FilesystemIPC:
             raise ValueError("los tiempos deben ser mayores que cero")
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            response = self.load_response(request_id)
+            try:
+                response = self.load_response(request_id)
+            except PermissionError:
+                # Windows puede negar brevemente la lectura mientras otro
+                # proceso termina de publicar o inspeccionar el archivo.
+                response = None
             if response is not None:
                 return response
             time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))

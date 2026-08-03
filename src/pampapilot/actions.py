@@ -49,6 +49,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Lee identidad, estado y FX de la pista master.",
         ),
         ActionSpec(
+            "render_master_candidate",
+            True,
+            VerificationLevel.STATE,
+            "Renderiza un WAV nuevo mediante ajustes explícitos y devuelve un recibo.",
+        ),
+        ActionSpec(
+            "restore_render_settings",
+            True,
+            VerificationLevel.STATE,
+            "Restaura un snapshot verificado después de renderizar un candidato.",
+        ),
+        ActionSpec(
             "create_track",
             True,
             VerificationLevel.STATE,
@@ -137,6 +149,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Agrega ReaLimit al master y devuelve parámetros e identidad verificables.",
+        ),
+        ActionSpec(
+            "remove_master_fx",
+            True,
+            VerificationLevel.STATE,
+            "Quita una instancia ReaLimit exacta del master mediante su GUID.",
         ),
         ActionSpec(
             "apply_mastering_limiter",

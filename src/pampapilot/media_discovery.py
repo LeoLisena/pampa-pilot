@@ -63,6 +63,27 @@ def resolve_output_directory(
     )
 
 
+def resolve_output_file(
+    raw_path: str | Path,
+    *,
+    workspace_root: Path = WORKSPACE_ROOT,
+    suffixes: Iterable[str] | None = None,
+    require_absent: bool = True,
+) -> Path:
+    workspace_root = workspace_root.resolve()
+    candidate = _require_within(
+        _resolve_candidate(raw_path, workspace_root),
+        (workspace_root / "sessions",),
+    )
+    if suffixes is not None and candidate.suffix.casefold() not in {
+        suffix.casefold() for suffix in suffixes
+    }:
+        raise MediaPathError(f"unsupported file type: {candidate.suffix}")
+    if require_absent and candidate.exists():
+        raise FileExistsError(candidate)
+    return candidate
+
+
 def _normalized_name(value: str) -> str:
     value = re.sub(r"^\s*\d+\s*[-_. ]*", "", value)
     value = re.sub(r"\([^)]*\)", " ", value)
