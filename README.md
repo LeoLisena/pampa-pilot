@@ -85,8 +85,9 @@ El puente 0.27.0 interpreta letras estructuradas y muestra regiones reversibles.
 El motor 0.2 fusiona downbeats/modelo especialista, análisis por compás de todos
 los stems, consenso por rol y repetición musical; esas métricas quedan separadas
 para reutilizarlas en otras decisiones de productor.
-El puente 0.28.0 agrega carga atómica de presets ReaTune y permite agrupar Solo
-con volumen, paneo y mute. La web traduce órdenes simples o complejas del chat a
+El puente 0.28.1 agrega carga atómica de presets ReaTune y acepta volumen, paneo,
+mute o solo como campos independientes dentro de una misma operación. La web
+traduce órdenes simples o complejas del chat a
 un catálogo tipado, exige aprobación según una política configurable, verifica
 el estado y permite deshacer el plan completo. El texto libre del LLM nunca se
 ejecuta directamente.

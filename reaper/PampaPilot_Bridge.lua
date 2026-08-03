@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.28.0"
+local BRIDGE_VERSION = "0.28.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -2593,14 +2593,22 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
     seen[guid] = true
 
     local track, index = find_track_by_guid(project, guid)
-    local volume_db = item.volume_db == nil
-      and nil or require_number(item.volume_db, "volume_db", -60.0, 12.0)
-    local pan = item.pan == nil
-      and nil or require_number(item.pan, "pan", -1.0, 1.0)
-    local muted = item.muted == nil
-      and nil or require_boolean(item.muted, "muted")
-    local soloed = item.soloed == nil
-      and nil or require_boolean(item.soloed, "soloed")
+    local volume_db = nil
+    if item.volume_db ~= nil then
+      volume_db = require_number(item.volume_db, "volume_db", -60.0, 12.0)
+    end
+    local pan = nil
+    if item.pan ~= nil then
+      pan = require_number(item.pan, "pan", -1.0, 1.0)
+    end
+    local muted = nil
+    if item.muted ~= nil then
+      muted = require_boolean(item.muted, "muted")
+    end
+    local soloed = nil
+    if item.soloed ~= nil then
+      soloed = require_boolean(item.soloed, "soloed")
+    end
     if volume_db == nil and pan == nil and muted == nil and soloed == nil then
       error("el ajuste " .. position .. " no contiene cambios")
     end
