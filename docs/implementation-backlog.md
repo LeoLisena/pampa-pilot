@@ -158,6 +158,9 @@ Referencias de diseño para carga genérica de presets:
 - [x] Autosimilitud conjunta de precoros/estrofas con restricciones de fraseo.
 - [x] Perfiles de letra limpia/dañada; la ruta limpia es el comportamiento
       principal y la tolerancia a corrupción de Suno es un fallback.
+- [x] Fine-tuning opcional de frases vocales con backend automático GPU/CPU.
+- [ ] Análisis reutilizable de performance vocal: pitch, notas, vibrato,
+      cadencia, dinámica y timbre sin delegar esas métricas a Whisper.
 - [ ] Validar visualmente en REAPER las regiones de `Mi Pequeño Sol` y ajustar
       manualmente cualquier límite que no coincida con la escucha.
 - [ ] Evaluación de balance espectral y dinámica frente a referencia, con

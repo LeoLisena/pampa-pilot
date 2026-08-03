@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import hashlib
 
 import numpy as np
 import pytest
@@ -186,3 +187,54 @@ def test_ensemble_uses_specialist_macro_anchors_and_repeated_pre_choruses(
     assert starts["Final Chorus"] == 56
     assert starts["Outro"] == 64
     assert proposal["timing_evidence"]["timeline_summary"]["stem_count"] == 6
+
+    alignment = tmp_path / "alignment.json"
+    alignment.write_text(
+        json.dumps(
+            {
+                "kind": "pampapilot_vocal_lyric_alignment",
+                "lyrics_sha256": hashlib.sha256(lyrics.read_bytes()).hexdigest(),
+                "model": {"name": "test"},
+                "alignments": [
+                    {
+                        "section_index": 2,
+                        "occurrence": 1,
+                        "status": "matched",
+                        "match": {
+                            "detected_start_seconds": 12.1,
+                            "confidence": 0.95,
+                            "text_match_score": 1.0,
+                            "mean_word_probability": 0.95,
+                        },
+                    },
+                    {
+                        "section_index": 5,
+                        "occurrence": 2,
+                        "status": "matched",
+                        "match": {
+                            "detected_start_seconds": 31.4,
+                            "confidence": 0.92,
+                            "text_match_score": 1.0,
+                            "mean_word_probability": 0.9,
+                        },
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    tuned = build_song_structure_proposal(
+        audio,
+        lyrics,
+        bpm=120,
+        stem_paths=[audio],
+        specialist_analysis_path=specialist,
+        vocal_alignment_path=alignment,
+    )
+    tuned_pre_starts = [
+        region["start_seconds"] for region in tuned["regions"]
+        if region["kind"] == "pre_chorus"
+    ]
+    assert tuned_pre_starts == [12.0, 31.4]
+    second_evidence = tuned["timing_evidence"]["boundary_evidence"][4]
+    assert second_evidence["source"] == "clean_lyrics_vocal_phrase_alignment"

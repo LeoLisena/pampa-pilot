@@ -31,6 +31,8 @@ La ruta de máxima precisión combina:
 5. restricciones de factibilidad derivadas de las frases de la letra: por
    ejemplo, cuatro líneas de precoro no pueden colapsar en dos compases por un
    fill aislado.
+6. alineación opcional de frases sobre el stem vocal cuando una letra limpia y
+   la evidencia instrumental discrepan.
 
 El modelo externo es una segunda opinión de sólo lectura. Sus pesos y binarios
 no forman parte de PampaPilot y el flujo básico continúa funcionando sin ellos.
@@ -55,7 +57,7 @@ undo.
 
 La letra declara diez secciones. All-In-One ONNX detectó 85 BPM, downbeats y los
 cambios macro. El análisis de los doce stems y la repetición entre ciclos
-produjeron la propuesta limpia `511c8d6bcae7dfadf02e77c2`:
+produjeron la propuesta afinada `be0520a6fc3cf36be93fc5c5`:
 
 | Sección | Inicio (s) | Evidencia principal |
 |---|---:|---|
@@ -64,7 +66,7 @@ produjeron la propuesta limpia `511c8d6bcae7dfadf02e77c2`:
 | Pre-Chorus | 45.76 | transición rítmica + repetición |
 | Chorus | 59.88 | especialista + entrada de coros |
 | Verse 2 | 93.77 | especialista |
-| Pre-Chorus | 110.71 | repetición + transición multistem |
+| Pre-Chorus | 113.21 | alineación de frase vocal (0,980) |
 | Chorus | 127.65 | especialista + coros |
 | Bridge | 150.24 | salida del segundo chorus |
 | Final Chorus | 186.93 | especialista |

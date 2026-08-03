@@ -366,6 +366,24 @@ def _load_specialist_analysis(path: Path) -> dict[str, Any]:
     }
 
 
+def _load_vocal_alignment(path: Path, lyrics_sha256: str) -> dict[str, Any]:
+    alignment_path = Path(path).resolve()
+    payload = json.loads(alignment_path.read_text(encoding="utf-8"))
+    if payload.get("kind") != "pampapilot_vocal_lyric_alignment":
+        raise ValueError("unsupported vocal alignment artifact")
+    if payload.get("lyrics_sha256") != lyrics_sha256:
+        raise ValueError("vocal alignment lyrics hash does not match current lyrics")
+    alignments = payload.get("alignments")
+    if not isinstance(alignments, list):
+        raise ValueError("vocal alignment contains no alignments list")
+    return {
+        "file_path": str(alignment_path),
+        "sha256": _sha256(alignment_path),
+        "model": payload.get("model", {}),
+        "alignments": alignments,
+    }
+
+
 def _specialist_anchor_map(
     sections: list[Mapping[str, Any]], specialist: Mapping[str, Any]
 ) -> dict[int, dict[str, Any]]:
@@ -613,6 +631,7 @@ def _ensemble_boundaries(
     timeline: Mapping[str, Any],
     specialist: Mapping[str, Any],
     lyrics_quality: Mapping[str, Any],
+    vocal_alignment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     anchors = _specialist_anchor_map(sections, specialist)
     pre_selected, pre_details = _select_pre_choruses(
@@ -624,6 +643,39 @@ def _ensemble_boundaries(
             "source": "multistem_repetition_and_local_transition",
             **pre_details[section_index],
         }
+    if vocal_alignment is not None:
+        grid = list(timeline["interval_boundaries_seconds"])
+        for alignment in vocal_alignment["alignments"]:
+            if alignment.get("status") != "matched" or not isinstance(alignment.get("match"), Mapping):
+                continue
+            section_index = int(alignment["section_index"])
+            if not 0 < section_index < len(sections) or sections[section_index]["kind"] != "pre_chorus":
+                continue
+            match = alignment["match"]
+            confidence = float(match.get("confidence", 0.0))
+            if confidence < 0.7:
+                continue
+            detected = float(match["detected_start_seconds"])
+            nearest = min(grid, key=lambda value: abs(value - detected))
+            # Preserve a real downbeat when the ASR onset is within 250 ms.
+            # Larger offsets are treated as sung pickups and retain the phrase
+            # onset instead of moving the section past its first word.
+            chosen = nearest if abs(nearest - detected) <= 0.25 else detected
+            previous = float(anchors[section_index - 1]["time_seconds"])
+            following = float(anchors[section_index + 1]["time_seconds"])
+            if not previous < chosen < following:
+                continue
+            anchors[section_index] = {
+                "time_seconds": chosen,
+                "source": "clean_lyrics_vocal_phrase_alignment",
+                "detected_phrase_start_seconds": detected,
+                "nearest_downbeat_seconds": nearest,
+                "distance_to_downbeat_seconds": abs(nearest - detected),
+                "phrase_alignment_confidence": confidence,
+                "text_match_score": match.get("text_match_score"),
+                "mean_word_probability": match.get("mean_word_probability"),
+                "occurrence": alignment.get("occurrence"),
+            }
     duration = float(timeline["duration_seconds"])
     grid = list(timeline["interval_boundaries_seconds"])
     lookup = _timeline_boundary_lookup(timeline)
@@ -683,7 +735,11 @@ def _ensemble_boundaries(
         "boundary_evidence": boundary_evidence,
         "tempo_grid_bpm": timeline["bpm"],
         "grid_source": timeline["grid_source"],
-        "method": "lyrics_constrained_multistem_repetition_plus_specialist",
+        "method": (
+            "clean_lyrics_vocal_alignment_plus_multistem_specialist"
+            if vocal_alignment is not None
+            else "lyrics_constrained_multistem_repetition_plus_specialist"
+        ),
         "specialist": {
             "provider": specialist["provider"],
             "file_path": specialist["file_path"],
@@ -697,6 +753,14 @@ def _ensemble_boundaries(
             "reuse_contract": timeline["reuse_contract"],
         },
         "lyrics_quality": dict(lyrics_quality),
+        "vocal_alignment": (
+            {
+                "file_path": vocal_alignment["file_path"],
+                "sha256": vocal_alignment["sha256"],
+                "model": vocal_alignment["model"],
+            }
+            if vocal_alignment is not None else None
+        ),
     }
 
 
@@ -708,6 +772,7 @@ def build_song_structure_proposal(
     vocal_path: Path | None = None,
     stem_paths: Iterable[Path] | None = None,
     specialist_analysis_path: Path | None = None,
+    vocal_alignment_path: Path | None = None,
 ) -> dict[str, Any]:
     """Use lyric order as semantic evidence and audio features for timing."""
 
@@ -725,6 +790,10 @@ def build_song_structure_proposal(
         _load_specialist_analysis(Path(specialist_analysis_path))
         if specialist_analysis_path is not None else None
     )
+    vocal_alignment = (
+        _load_vocal_alignment(Path(vocal_alignment_path), lyrics["sha256"])
+        if vocal_alignment_path is not None else None
+    )
     if stems and specialist is not None:
         if bpm is None:
             raise ValueError("bpm is required for multistem ensemble analysis")
@@ -732,7 +801,7 @@ def build_song_structure_proposal(
             raise ValueError("specialist BPM does not match requested BPM")
         timeline = analyze_music_timeline(stems, bpm=bpm, downbeats=specialist["downbeats"])
         timing = _ensemble_boundaries(
-            lyrics["sections"], timeline, specialist, lyrics["quality"]
+            lyrics["sections"], timeline, specialist, lyrics["quality"], vocal_alignment
         )
     else:
         timing = _audio_boundaries(audio, lyrics["sections"], bpm, vocal_start)
@@ -757,6 +826,9 @@ def build_song_structure_proposal(
         "vocal_sha256": vocal_sha256,
         "stem_sha256": [_sha256(path) for path in stems],
         "specialist_sha256": specialist["sha256"] if specialist is not None else None,
+        "vocal_alignment_sha256": (
+            vocal_alignment["sha256"] if vocal_alignment is not None else None
+        ),
         "bpm": bpm,
         "regions": [(region["label"], round(region["start_seconds"], 6)) for region in regions],
     }
@@ -785,6 +857,12 @@ def build_song_structure_proposal(
             "stem_paths": [str(path) for path in stems],
             "specialist_analysis_path": specialist["file_path"] if specialist is not None else None,
             "specialist_analysis_sha256": specialist["sha256"] if specialist is not None else None,
+            "vocal_alignment_path": (
+                vocal_alignment["file_path"] if vocal_alignment is not None else None
+            ),
+            "vocal_alignment_sha256": (
+                vocal_alignment["sha256"] if vocal_alignment is not None else None
+            ),
         },
         "regions": regions,
         "timing_evidence": timing,

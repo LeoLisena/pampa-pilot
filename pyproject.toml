@@ -24,6 +24,10 @@ analysis = [
     "pyyaml>=6,<7",
     "scipy>=1.15,<2",
 ]
+lyrics-alignment = [
+    "faster-whisper>=1.2,<2",
+    "truststore>=0.10,<1",
+]
 dev = [
     "pytest>=8,<10",
 ]

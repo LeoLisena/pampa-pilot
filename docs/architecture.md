@@ -92,6 +92,11 @@ podrá usar el mismo catálogo. Los modelos musicales especializados serán
 consultores de sólo lectura y entregarán propuestas al orquestador, nunca cambios
 directos en REAPER.
 
+Los especialistas también se separan por dominio: ASR/alineación aporta texto y
+timing de frases; pitch, notas, dinámica y timbre pertenecen a analizadores de
+performance musical. Sus artefactos son intercambiables y el backend de cómputo
+puede elegir GPU o CPU sin cambiar el contrato del orquestador.
+
 ## Fuentes primarias revisadas
 
 - [REAPER ReaScript](https://www.reaper.fm/sdk/reascript/reascript.php)

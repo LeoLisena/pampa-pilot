@@ -112,6 +112,8 @@ La estrategia híbrida de procesamiento por stem está en
 El análisis temporal reutilizable está en
 [docs/timeline-analysis.md](docs/timeline-analysis.md) y su aplicación a
 secciones en [docs/song-structure.md](docs/song-structure.md).
+El fine-tuning lingüístico y su backend automático GPU/CPU están en
+[docs/vocal-lyric-alignment.md](docs/vocal-lyric-alignment.md).
 El control offline del master para distribución está en
 [docs/master-delivery-qc.md](docs/master-delivery-qc.md).
 El limitador de mastering supervisado está en

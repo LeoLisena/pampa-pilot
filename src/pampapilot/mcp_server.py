@@ -891,6 +891,9 @@ def preview_song_structure(
     specialist_analysis_path: Annotated[
         str | None, Field(min_length=1, max_length=4096)
     ] = None,
+    vocal_alignment_path: Annotated[
+        str | None, Field(min_length=1, max_length=4096)
+    ] = None,
 ) -> dict[str, Any]:
     """Fusiona letra, stems y un especialista opcional para estimar los límites."""
 
@@ -904,6 +907,10 @@ def preview_song_structure(
         resolve_input_file(specialist_analysis_path, suffixes={".json"})
         if specialist_analysis_path else None
     )
+    vocal_alignment = (
+        resolve_input_file(vocal_alignment_path, suffixes={".json"})
+        if vocal_alignment_path else None
+    )
     return build_song_structure_proposal(
         audio,
         lyrics,
@@ -911,6 +918,7 @@ def preview_song_structure(
         vocal_path=vocal,
         stem_paths=stems,
         specialist_analysis_path=specialist,
+        vocal_alignment_path=vocal_alignment,
     )
 
 
@@ -934,6 +942,9 @@ def apply_project_song_structure(
     specialist_analysis_path: Annotated[
         str | None, Field(min_length=1, max_length=4096)
     ] = None,
+    vocal_alignment_path: Annotated[
+        str | None, Field(min_length=1, max_length=4096)
+    ] = None,
 ) -> dict[str, Any]:
     """Recalcula la propuesta y crea todas sus regiones en una única transacción."""
 
@@ -947,6 +958,10 @@ def apply_project_song_structure(
         resolve_input_file(specialist_analysis_path, suffixes={".json"})
         if specialist_analysis_path else None
     )
+    vocal_alignment = (
+        resolve_input_file(vocal_alignment_path, suffixes={".json"})
+        if vocal_alignment_path else None
+    )
     proposal = build_song_structure_proposal(
         audio,
         lyrics,
@@ -954,6 +969,7 @@ def apply_project_song_structure(
         vocal_path=vocal,
         stem_paths=stems,
         specialist_analysis_path=specialist,
+        vocal_alignment_path=vocal_alignment,
     )
     payload = build_structure_region_payload(proposal, approved_structure_id)
     reply = _call(
