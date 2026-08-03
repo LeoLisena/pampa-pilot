@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.5.1"
+local BRIDGE_VERSION = "0.7.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -174,6 +174,29 @@ local function require_allowed_audio_path(value)
   if not allowed then error("file_path está fuera de allowed_media_roots") end
   local stream = io.open(path, "rb")
   if not stream then error("no se puede leer el archivo WAV") end
+  stream:close()
+  return path
+end
+
+local function require_allowed_midi_path(value)
+  local path = require_string(value, "file_path", 4096)
+  local lower = path:lower()
+  if lower:sub(-4) ~= ".mid" and lower:sub(-5) ~= ".midi" then
+    error("file_path debe terminar en .mid o .midi")
+  end
+  local candidate = normalized_absolute_path(path, "file_path")
+  local allowed = false
+  for _, root_value in ipairs(allowed_media_roots) do
+    local root = normalized_absolute_path(root_value, "allowed_media_roots")
+    local prefix = root .. separator
+    if candidate:sub(1, #prefix) == prefix then
+      allowed = true
+      break
+    end
+  end
+  if not allowed then error("file_path está fuera de allowed_media_roots") end
+  local stream = io.open(path, "rb")
+  if not stream then error("no se puede leer el archivo MIDI") end
   stream:close()
   return path
 end
@@ -855,6 +878,58 @@ function ACTIONS.add_stock_fx(params, request_id)
   return result, observations(true)
 end
 
+function ACTIONS.add_instrument(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local instrument_type = require_string(params.instrument_type, "instrument_type", 32)
+  local plugin_name
+  local expected_name
+  local description
+  if instrument_type == "reasynth" then
+    plugin_name, expected_name, description =
+      "ReaSynth (Cockos)", "reasynth", "agregar ReaSynth"
+  else
+    error("instrumento virtual no permitido")
+  end
+
+  local before_count = reaper.TrackFX_GetCount(track)
+  local before_instrument = reaper.TrackFX_GetInstrument(track)
+  if before_instrument >= 0 then
+    error("la pista ya contiene un instrumento virtual")
+  end
+
+  local result = run_transaction(project, request_id, description, function()
+    local fx_index = reaper.TrackFX_AddByName(track, plugin_name, false, -1)
+    if fx_index < 0 then error("REAPER no pudo agregar " .. expected_name) end
+    if reaper.TrackFX_GetCount(track) ~= before_count + 1 then
+      error("la cantidad de FX no aumentó exactamente en uno")
+    end
+    local instrument_index = reaper.TrackFX_GetInstrument(track)
+    if instrument_index ~= fx_index then
+      error("REAPER no reconoció el FX agregado como instrumento de la pista")
+    end
+    local fx = read_fx(track, fx_index, true)
+    if not fx.name:lower():find(expected_name, 1, true) then
+      error("el instrumento agregado no tiene la identidad esperada")
+    end
+    if not fx.enabled or fx.offline then
+      error("el instrumento no quedó activo y online")
+    end
+    local track_state = read_track(track, index)
+    if track_state.fx_count ~= before_count + 1 then
+      error("la lectura posterior de la pista no refleja el instrumento agregado")
+    end
+    return {
+      project_ref = ref,
+      track = track_state,
+      instrument = fx,
+      instrument_index = instrument_index,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
 function ACTIONS.configure_reaeq_band(params, request_id)
   local project, _, ref = require_project(params)
   local track = find_track_by_guid(project, params.track_guid)
@@ -1060,6 +1135,279 @@ function ACTIONS.import_audio_batch(params, request_id)
       imports[index] = import_audio_into_new_track(
         project, item.file_path, item.track_name, item.position
       )
+    end
+    return {
+      project_ref = ref,
+      imported_count = #imports,
+      imports = imports,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+local function midi_note_less(left, right)
+  if left.start_tick ~= right.start_tick then return left.start_tick < right.start_tick end
+  if left.pitch ~= right.pitch then return left.pitch < right.pitch end
+  if left.end_tick ~= right.end_tick then return left.end_tick < right.end_tick end
+  if left.channel ~= right.channel then return left.channel < right.channel end
+  return left.velocity < right.velocity
+end
+
+local function midi_program_less(left, right)
+  if left.tick ~= right.tick then return left.tick < right.tick end
+  if left.channel ~= right.channel then return left.channel < right.channel end
+  return left.program < right.program
+end
+
+local function validate_midi_import_spec(value)
+  if type(value) ~= "table" then error("la entrada MIDI debe ser un objeto") end
+  local spec = {
+    file_path = require_allowed_midi_path(value.file_path),
+    source_sha256 = require_string(value.source_sha256, "source_sha256", 64),
+    track_name = require_string(value.track_name, "track_name", 128),
+    position_quarter_notes = require_number(
+      value.position_quarter_notes, "position_quarter_notes", 0.0, 1000000.0),
+    muted = require_boolean(value.muted, "muted"),
+    expected_bpm = require_number(value.expected_bpm, "expected_bpm", 20.0, 400.0),
+    ticks_per_beat = require_integer(value.ticks_per_beat, "ticks_per_beat", 1, 15360),
+    note_count = require_integer(value.note_count, "note_count", 1, 8000),
+    end_tick = require_integer(value.end_tick, "end_tick", 1, 2000000000),
+    notes = {},
+    program_changes = {},
+  }
+  if #spec.source_sha256 ~= 64 or not spec.source_sha256:match("^[0-9a-fA-F]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal")
+  end
+  if type(value.notes) ~= "table" or #value.notes ~= spec.note_count then
+    error("notes no coincide con note_count")
+  end
+  local maximum_end = 0
+  for index, note in ipairs(value.notes) do
+    if type(note) ~= "table" then error("cada nota MIDI debe ser un objeto") end
+    local validated = {
+      start_tick = require_integer(note.start_tick, "start_tick", 0, 2000000000),
+      end_tick = require_integer(note.end_tick, "end_tick", 1, 2000000000),
+      pitch = require_integer(note.pitch, "pitch", 0, 127),
+      velocity = require_integer(note.velocity, "velocity", 1, 127),
+      channel = require_integer(note.channel, "channel", 0, 15),
+    }
+    if validated.end_tick <= validated.start_tick then
+      error("la nota " .. index .. " no tiene duración positiva")
+    end
+    maximum_end = math.max(maximum_end, validated.end_tick)
+    spec.notes[index] = validated
+  end
+  if maximum_end ~= spec.end_tick then error("end_tick no coincide con las notas") end
+  table.sort(spec.notes, midi_note_less)
+
+  if type(value.program_changes) ~= "table" or #value.program_changes > 256 then
+    error("program_changes debe ser un arreglo de hasta 256 eventos")
+  end
+  for index, event in ipairs(value.program_changes) do
+    if type(event) ~= "table" then error("cada cambio de programa debe ser un objeto") end
+    spec.program_changes[index] = {
+      tick = require_integer(event.tick, "program_tick", 0, spec.end_tick),
+      channel = require_integer(event.channel, "program_channel", 0, 15),
+      program = require_integer(event.program, "program", 0, 127),
+    }
+  end
+  table.sort(spec.program_changes, midi_program_less)
+  return spec
+end
+
+local function midi_tick_from_ppq(take, ppq, position_qn, ticks_per_beat)
+  local project_qn = reaper.MIDI_GetProjQNFromPPQPos(take, ppq)
+  return math.floor((project_qn - position_qn) * ticks_per_beat + 0.5)
+end
+
+local function read_and_verify_midi_take(take, spec)
+  local count_ok, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
+  if not count_ok then error("REAPER no pudo contar los eventos MIDI") end
+  if note_count ~= #spec.notes then error("la cantidad de notas releída no coincide") end
+  if cc_count ~= #spec.program_changes then
+    error("la cantidad de eventos de programa releída no coincide")
+  end
+  if text_count ~= 0 then error("REAPER creó eventos de texto o SysEx inesperados") end
+
+  local observed_notes = {}
+  local pitch_min, pitch_max, velocity_min, velocity_max = 127, 0, 127, 0
+  for index = 0, note_count - 1 do
+    local ok, _, note_muted, start_ppq, end_ppq, channel, pitch, velocity =
+      reaper.MIDI_GetNote(take, index)
+    if not ok then error("REAPER no pudo releer la nota MIDI " .. index) end
+    if note_muted then error("REAPER silenció una nota MIDI inesperadamente") end
+    local note = {
+      start_tick = midi_tick_from_ppq(
+        take, start_ppq, spec.position_quarter_notes, spec.ticks_per_beat),
+      end_tick = midi_tick_from_ppq(
+        take, end_ppq, spec.position_quarter_notes, spec.ticks_per_beat),
+      channel = channel,
+      pitch = pitch,
+      velocity = velocity,
+    }
+    pitch_min, pitch_max = math.min(pitch_min, pitch), math.max(pitch_max, pitch)
+    velocity_min = math.min(velocity_min, velocity)
+    velocity_max = math.max(velocity_max, velocity)
+    observed_notes[#observed_notes + 1] = note
+  end
+  table.sort(observed_notes, midi_note_less)
+  for index, expected in ipairs(spec.notes) do
+    local observed = observed_notes[index]
+    if observed.start_tick ~= expected.start_tick
+      or observed.end_tick ~= expected.end_tick
+      or observed.channel ~= expected.channel
+      or observed.pitch ~= expected.pitch
+      or observed.velocity ~= expected.velocity then
+      error("la nota MIDI releída no coincide en el índice " .. index)
+    end
+  end
+
+  local observed_programs = {}
+  for index = 0, cc_count - 1 do
+    local ok, _, event_muted, ppq, status, channel, message2 = reaper.MIDI_GetCC(take, index)
+    if not ok then error("REAPER no pudo releer el evento MIDI " .. index) end
+    if event_muted or status ~= 0xC0 then
+      error("REAPER devolvió un evento de canal inesperado")
+    end
+    observed_programs[#observed_programs + 1] = {
+      tick = midi_tick_from_ppq(
+        take, ppq, spec.position_quarter_notes, spec.ticks_per_beat),
+      channel = channel,
+      program = message2,
+    }
+  end
+  table.sort(observed_programs, midi_program_less)
+  for index, expected in ipairs(spec.program_changes) do
+    local observed = observed_programs[index]
+    if observed.tick ~= expected.tick or observed.channel ~= expected.channel
+      or observed.program ~= expected.program then
+      error("el cambio de programa releído no coincide en el índice " .. index)
+    end
+  end
+  return {
+    note_count = note_count,
+    program_change_count = cc_count,
+    pitch_min = pitch_min,
+    pitch_max = pitch_max,
+    velocity_min = velocity_min,
+    velocity_max = velocity_max,
+    end_tick = spec.end_tick,
+    ticks_per_beat = spec.ticks_per_beat,
+  }
+end
+
+local function materialize_midi_into_new_track(project, spec)
+  local observed_tempo = reaper.Master_GetTempo()
+  if math.abs(observed_tempo - spec.expected_bpm) > 0.001 then
+    error("el tempo del proyecto no coincide con el MIDI")
+  end
+  local index = reaper.CountTracks(project)
+  reaper.InsertTrackInProject(project, index, 0)
+  local track = reaper.GetTrack(project, index)
+  if not track then error("REAPER no devolvió la pista MIDI creada") end
+  if not reaper.GetSetMediaTrackInfo_String(track, "P_NAME", spec.track_name, true) then
+    error("REAPER rechazó el nombre de la pista MIDI")
+  end
+  if not reaper.SetMediaTrackInfo_Value(track, "B_MUTE", spec.muted and 1 or 0) then
+    error("REAPER rechazó el mute inicial de la pista MIDI")
+  end
+
+  local end_qn = spec.position_quarter_notes + spec.end_tick / spec.ticks_per_beat
+  local item = reaper.CreateNewMIDIItemInProj(
+    track, spec.position_quarter_notes, end_qn, true)
+  if not item then error("REAPER no pudo crear el ítem MIDI") end
+  if not reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 1) then
+    error("REAPER rechazó el timebase musical del ítem MIDI")
+  end
+  local take = reaper.GetActiveTake(item)
+  if not take or not reaper.TakeIsMIDI(take) then
+    error("REAPER no devolvió una toma MIDI")
+  end
+  if not reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", spec.track_name, true) then
+    error("REAPER rechazó el nombre de la toma MIDI")
+  end
+
+  for _, note in ipairs(spec.notes) do
+    local start_qn = spec.position_quarter_notes + note.start_tick / spec.ticks_per_beat
+    local end_note_qn = spec.position_quarter_notes + note.end_tick / spec.ticks_per_beat
+    if not reaper.MIDI_InsertNote(
+        take, false, false,
+        reaper.MIDI_GetPPQPosFromProjQN(take, start_qn),
+        reaper.MIDI_GetPPQPosFromProjQN(take, end_note_qn),
+        note.channel, note.pitch, note.velocity, true) then
+      error("REAPER rechazó una nota MIDI")
+    end
+  end
+  for _, event in ipairs(spec.program_changes) do
+    local event_qn = spec.position_quarter_notes + event.tick / spec.ticks_per_beat
+    if not reaper.MIDI_InsertCC(
+        take, false, false, reaper.MIDI_GetPPQPosFromProjQN(take, event_qn),
+        0xC0, event.channel, event.program, 0) then
+      error("REAPER rechazó un cambio de programa MIDI")
+    end
+  end
+  reaper.MIDI_Sort(take)
+
+  local item_ok, item_guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+  local take_ok, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+  if not item_ok or item_guid == "" then error("REAPER no devolvió GUID del ítem MIDI") end
+  if not take_ok or take_guid == "" then error("REAPER no devolvió GUID de la toma MIDI") end
+  local track_state = read_track(track, index)
+  if track_state.name ~= spec.track_name or track_state.muted ~= spec.muted then
+    error("la lectura posterior de la pista MIDI no coincide")
+  end
+  local midi = read_and_verify_midi_take(take, spec)
+  return {
+    source_path = spec.file_path,
+    source_sha256 = spec.source_sha256,
+    track = track_state,
+    item = {
+      guid = item_guid,
+      take_guid = take_guid,
+      position_quarter_notes = spec.position_quarter_notes,
+      end_quarter_notes = end_qn,
+      timebase = reaper.GetMediaItemInfo_Value(item, "C_BEATATTACHMODE"),
+      midi = midi,
+    },
+  }
+end
+
+function ACTIONS.import_midi(params, request_id)
+  local project, _, ref = require_project(params)
+  local spec = validate_midi_import_spec(params)
+  local result = run_transaction(project, request_id, "importar MIDI", function()
+    local imported = materialize_midi_into_new_track(project, spec)
+    return {
+      project_ref = ref,
+      track = imported.track,
+      item = imported.item,
+      source_path = imported.source_path,
+      source_sha256 = imported.source_sha256,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.import_midi_batch(params, request_id)
+  local project, _, ref = require_project(params)
+  if type(params.items) ~= "table" or #params.items < 1 or #params.items > 8 then
+    error("items debe contener entre 1 y 8 entradas MIDI")
+  end
+  local specs, paths, names = {}, {}, {}
+  for index, item in ipairs(params.items) do
+    local spec = validate_midi_import_spec(item)
+    local normalized_path = normalized_absolute_path(spec.file_path, "file_path")
+    if paths[normalized_path] then error("items contiene un MIDI duplicado") end
+    if names[spec.track_name] then error("items contiene un nombre de pista duplicado") end
+    paths[normalized_path], names[spec.track_name] = true, true
+    specs[index] = spec
+  end
+  local result = run_transaction(project, request_id, "importar lote MIDI", function()
+    local imports = {}
+    for index, spec in ipairs(specs) do
+      imports[index] = materialize_midi_into_new_track(project, spec)
     end
     return {
       project_ref = ref,

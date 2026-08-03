@@ -34,6 +34,12 @@ Sobre un proyecto de prueba desechable:
     devuelve la identidad nueva del proyecto.
 15. `import_audio_batch` valida todos los WAV antes de escribir y crea el lote
     completo dentro de una sola transacción reversible.
+16. `import_midi` materializa notas en posiciones musicales y vuelve a leer
+    todos los eventos sin importar el mapa de tempo.
+17. `import_midi_batch` valida el lote completo antes de crear hasta ocho pistas
+    como una única transacción reversible.
+18. `add_instrument` agrega un VSTi permitido, verifica su GUID y exige que REAPER
+    lo reconozca como instrumento de la pista.
 
 ## Criterios de éxito
 

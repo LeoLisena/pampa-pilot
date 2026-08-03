@@ -24,15 +24,19 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "set_track_mute",
                 "apply_track_mix_batch",
                 "add_stock_fx",
+                "add_instrument",
                 "configure_reacomp",
                 "configure_reaeq_band",
                 "import_audio",
                 "import_audio_batch",
+                "import_midi",
+                "import_midi_batch",
                 "set_project_tempo",
                 "save_project_as",
                 "undo_transaction",
                 "discover_song_media",
                 "analyze_midi",
+                "propose_track_processing",
                 "preview_midi_cleanup",
                 "clean_midi_files",
                 "preview_song_preparation",
@@ -50,6 +54,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["apply_track_mix_batch"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.idempotent_hint)
         self.assertFalse(tools["add_stock_fx"].annotations.destructive_hint)
+        self.assertFalse(tools["add_instrument"].annotations.idempotent_hint)
+        self.assertFalse(tools["add_instrument"].annotations.destructive_hint)
         self.assertTrue(tools["configure_reacomp"].annotations.idempotent_hint)
         self.assertFalse(tools["configure_reacomp"].annotations.destructive_hint)
         self.assertTrue(tools["configure_reaeq_band"].annotations.idempotent_hint)
@@ -57,12 +63,16 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["import_audio"].annotations.destructive_hint)
         self.assertFalse(tools["import_audio"].annotations.idempotent_hint)
         self.assertFalse(tools["import_audio_batch"].annotations.idempotent_hint)
+        self.assertFalse(tools["import_midi"].annotations.idempotent_hint)
+        self.assertFalse(tools["import_midi_batch"].annotations.idempotent_hint)
+        self.assertFalse(tools["import_midi"].annotations.destructive_hint)
         self.assertTrue(tools["set_project_tempo"].annotations.idempotent_hint)
         self.assertFalse(tools["save_project_as"].annotations.destructive_hint)
         self.assertTrue(tools["save_project_as"].annotations.idempotent_hint)
         self.assertTrue(tools["undo_transaction"].annotations.destructive_hint)
         self.assertTrue(tools["discover_song_media"].annotations.read_only_hint)
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
+        self.assertTrue(tools["propose_track_processing"].annotations.read_only_hint)
         self.assertTrue(tools["preview_midi_cleanup"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.destructive_hint)

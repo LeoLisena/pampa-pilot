@@ -1,0 +1,37 @@
+id: mixing.eq.supervised-starting-points
+title: Puntos de partida supervisados para ecualización correctiva
+stage: mixing
+purpose: Proponer filtros iniciales prudentes cuya necesidad debe confirmarse por escucha.
+principles:
+  - Un filtro por rol es una hipótesis de audición, no evidencia de un problema.
+  - No se aplica ecualización por rutina a stems de Suno ya procesados.
+  - Se configura una banda de ReaEQ y se releen sus valores desde REAPER.
+  - La comparación debe hacerse con bypass y a volumen percibido semejante.
+profiles:
+  lead_vocal_cleanup:
+    intent: Evaluar si retirar subgraves no musicales mejora claridad y headroom.
+    starting_values:
+      band_type: high_pass
+      band_index: 0
+      frequency_hz: 80.0
+      gain_db: 0.0
+      q: 0.71
+      enabled: true
+    audition_range_hz: [60.0, 100.0]
+    rejection_condition: La voz pierde cuerpo o el filtro no mejora un problema audible.
+  backing_vocals_cleanup:
+    intent: Evaluar una limpieza algo mayor para facilitar el encaje detrás de la voz principal.
+    starting_values:
+      band_type: high_pass
+      band_index: 0
+      frequency_hz: 100.0
+      gain_db: 0.0
+      q: 0.71
+      enabled: true
+    audition_range_hz: [80.0, 140.0]
+    rejection_condition: Los coros pierden cuerpo o el cambio no mejora el conjunto.
+sources:
+  - title: Flujo supervisado solicitado por el usuario
+    kind: user_requirement
+confidence: draft_starting_points
+reviewed_at: 2026-08-02

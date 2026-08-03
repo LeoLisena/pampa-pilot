@@ -28,6 +28,9 @@ clipping antes de guardarla. El puente 0.5.1 agrega ReaComp y ReaEQ por GUID. El
 compresor se configura en unidades musicales y ReaEQ permite controlar bandas
 existentes por tipo e índice, con frecuencia, ganancia, Q y estado habilitado. Los
 valores se vuelven a leer dentro de una única transacción reversible.
+El puente 0.7.0 separa además instrumentos de efectos: `add_instrument` admite
+inicialmente ReaSynth y comprueba que REAPER lo registre realmente como VSTi de
+la pista, sin acoplar la interfaz a nombres arbitrarios de plugins.
 
 ## Decisiones iniciales
 
@@ -46,6 +49,10 @@ La limpieza reutilizable de MIDI contra un stem está en
 [docs/midi-cleanup.md](docs/midi-cleanup.md).
 La gatera y el manifiesto de sesión están en
 [docs/song-preparation.md](docs/song-preparation.md).
+La materialización MIDI verificable está en
+[docs/midi-import.md](docs/midi-import.md).
+Las propuestas auditables de procesamiento están en
+[docs/processing-proposals.md](docs/processing-proposals.md).
 
 ## Entorno Python reproducible
 
@@ -130,6 +137,12 @@ de sólo lectura; la última conserva los originales y restringe sus salidas a
 `sessions/`. De esta manera el agente puede descubrir, explicar y previsualizar
 antes de generar archivos, sin que REAPER esté abierto.
 
+`propose_track_processing` analiza un stem y consulta reglas YAML versionadas
+para devolver cadenas tentativas de ReaEQ/ReaComp. Nunca aplica el plan: separa
+observaciones, conocimiento, parámetros y verificaciones pendientes, y exige
+aprobación del usuario. En stems de Suno advierte expresamente que el audio puede
+venir procesado y que no debe comprimirse ni ecualizarse por rutina.
+
 ## Preparación de canción
 
 `preview_song_preparation` y `prepare_song` convierten una entrega de stems en
@@ -145,3 +158,18 @@ con `execute: false`:
 
 El manifiesto queda en `sessions/<canción>/song-manifest.json`. Para fuentes de
 Suno conserva niveles relativos y nunca normaliza stems individualmente.
+
+## MIDI dentro de REAPER
+
+`import_midi` e `import_midi_batch` crean ítems sin abrir el diálogo de
+importación, no modifican el tempo y vuelven a leer cada nota desde REAPER. La
+primera versión conserva notas y cambios de programa, y rechaza archivos con
+otros eventos para no perder expresión silenciosamente. Las pistas quedan
+muteadas por defecto y cada lote es una única transacción reversible.
+
+La instalación local de desarrollo usa un cargador pequeño para ejecutar
+siempre el Lua versionado del repositorio:
+
+```powershell
+.\scripts\install-reaper-bridge.ps1
+```

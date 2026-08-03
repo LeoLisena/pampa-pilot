@@ -1,7 +1,8 @@
 {
   "ipc_root": "C:\\RUTA\\AL\\PROYECTO\\.runtime\\reaper-ipc",
   "allowed_media_roots": [
-    "C:\\RUTA\\AL\\PROYECTO\\media"
+    "C:\\RUTA\\AL\\PROYECTO\\media",
+    "C:\\RUTA\\AL\\PROYECTO\\sessions"
   ],
   "allowed_project_roots": [
     "C:\\RUTA\\AL\\PROYECTO\\sessions"

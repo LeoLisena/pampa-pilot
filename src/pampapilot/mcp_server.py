@@ -20,6 +20,8 @@ from .midi_cleanup import (
     preview_cleanup,
     run_cleanup,
 )
+from .midi_import import build_midi_import_payload
+from .processing_proposal import propose_track_processing as build_track_processing_proposal
 from .song_preparation import (
     SongPreparationConfig,
     build_song_manifest,
@@ -69,8 +71,20 @@ class MidiCleanupOptions(BaseModel):
     propose_missing_notes: bool = True
 
 
-def _call(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    return _bridge.call(action, params).to_dict()
+class MidiImportItem(BaseModel):
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)]
+    track_name: Annotated[str, Field(min_length=1, max_length=128)]
+    position_quarter_notes: Annotated[float, Field(ge=0.0, le=1_000_000.0)] = 0.0
+    muted: bool = True
+
+
+def _call(
+    action: str,
+    params: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return _bridge.call(action, params, timeout_seconds=timeout_seconds).to_dict()
 
 
 def _midi_config(options: MidiCleanupOptions | None) -> CleanupConfig:
@@ -110,6 +124,23 @@ def analyze_midi(
 
     path = resolve_input_file(midi_path, suffixes={".mid", ".midi"})
     return analyze_midi_file(path)
+
+
+@mcp.tool(
+    title="Proponer procesamiento de una pista",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def propose_track_processing(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "backing_vocals", "bass", "drums"],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Analiza un WAV y propone una cadena auditable sin modificar REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_track_processing_proposal(audio_path, role, source_kind)
 
 
 @mcp.tool(
@@ -384,6 +415,32 @@ def add_stock_fx(
 
 
 @mcp.tool(
+    title="Agregar instrumento virtual permitido",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def add_instrument(
+    project_ref: str,
+    track_guid: str,
+    instrument_type: Literal["reasynth"],
+) -> dict[str, Any]:
+    """Agrega ReaSynth y verifica GUID, estado y reconocimiento como instrumento."""
+
+    return _call(
+        "add_instrument",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "instrument_type": instrument_type,
+        },
+    )
+
+
+@mcp.tool(
     title="Configurar compresor ReaComp",
     annotations=ToolAnnotations(
         read_only_hint=False,
@@ -521,6 +578,75 @@ def import_audio_batch(
             "project_ref": project_ref,
             "items": [item.model_dump() for item in items],
         },
+    )
+
+
+@mcp.tool(
+    title="Importar MIDI validado",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def import_midi(
+    project_ref: str,
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    track_name: Annotated[str, Field(min_length=1, max_length=128)],
+    expected_bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
+    position_quarter_notes: Annotated[float, Field(ge=0.0, le=1_000_000.0)] = 0.0,
+    muted: bool = True,
+) -> dict[str, Any]:
+    """Crea una pista MIDI sin diálogos y verifica todas las notas releídas."""
+
+    midi_path = resolve_input_file(file_path, suffixes={".mid", ".midi"})
+    item = build_midi_import_payload(
+        midi_path,
+        track_name,
+        position_quarter_notes=position_quarter_notes,
+        muted=muted,
+        expected_bpm=expected_bpm,
+    )
+    return _call(
+        "import_midi",
+        {"project_ref": project_ref, **item},
+        timeout_seconds=15.0,
+    )
+
+
+@mcp.tool(
+    title="Importar lote MIDI validado",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def import_midi_batch(
+    project_ref: str,
+    items: Annotated[list[MidiImportItem], Field(min_length=1, max_length=8)],
+    expected_bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
+) -> dict[str, Any]:
+    """Crea hasta ocho pistas MIDI dentro de una única transacción reversible."""
+
+    payloads = []
+    for item in items:
+        midi_path = resolve_input_file(item.file_path, suffixes={".mid", ".midi"})
+        payloads.append(
+            build_midi_import_payload(
+                midi_path,
+                item.track_name,
+                position_quarter_notes=item.position_quarter_notes,
+                muted=item.muted,
+                expected_bpm=expected_bpm,
+            )
+        )
+    return _call(
+        "import_midi_batch",
+        {"project_ref": project_ref, "items": payloads},
+        timeout_seconds=30.0,
     )
 
 

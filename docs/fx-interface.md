@@ -15,6 +15,16 @@ Toda mutación requiere:
 `add_stock_fx` permite actualmente `reacomp` y `reaeq`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
+`add_instrument` separa los generadores de sonido de los efectos de audio. Su
+primer adaptador permite `reasynth`; además de comprobar nombre, GUID y estado,
+exige que REAPER lo reconozca como el instrumento de la pista. Rechaza la
+operación si la pista ya tiene otro instrumento, para no crear cadenas ambiguas.
+La interfaz queda preparada para incorporar otros VSTi mediante identificadores
+permitidos, sin aceptar nombres arbitrarios provenientes del cerebro.
+
+ReaSynth sirve para validar de punta a punta que un MIDI produce sonido. No se
+considera una emulación de guitarra ni una decisión tímbrica de producción.
+
 ## ReaComp
 
 `configure_reacomp` controla threshold, ratio, attack, release, knee, RMS y las

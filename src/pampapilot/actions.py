@@ -85,6 +85,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Importa varios WAV como una única transacción verificable.",
         ),
         ActionSpec(
+            "import_midi",
+            True,
+            VerificationLevel.STATE,
+            "Materializa notas MIDI validadas en una pista y relee todos los eventos.",
+        ),
+        ActionSpec(
+            "import_midi_batch",
+            True,
+            VerificationLevel.STATE,
+            "Materializa varios MIDI como una única transacción verificable.",
+        ),
+        ActionSpec(
             "set_project_tempo",
             True,
             VerificationLevel.STATE,
@@ -101,6 +113,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Agrega un efecto nativo permitido y devuelve su identidad.",
+        ),
+        ActionSpec(
+            "add_instrument",
+            True,
+            VerificationLevel.STATE,
+            "Agrega un instrumento virtual permitido y verifica su identidad y rol.",
         ),
         ActionSpec(
             "configure_reacomp",
