@@ -1,4 +1,4 @@
-const state = { project: null, history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
+const state = { project: null, projects: [], history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -125,6 +125,7 @@ function instrumentIcon(role) {
 async function loadProjects(preferredName = '') {
   const result = await api('/api/projects');
   const projects = result.projects.filter(project => !project.error);
+  state.projects = projects;
   const selected = projects.find(project => project.name === preferredName) || projects[0];
   if (selected) renderProject(selected);
   else {
@@ -135,6 +136,37 @@ async function loadProjects(preferredName = '') {
     $('#stem-list').innerHTML = '<div class="empty-state">Cargá stems desde “Nueva canción”.</div>';
   }
   return selected || null;
+}
+
+const songLibraryDialog = $('#song-library-dialog');
+
+function renderSongLibrary(projects) {
+  const list = $('#song-library-list');
+  if (!projects.length) {
+    list.innerHTML = '<div class="empty-state">Todavía no hay canciones guardadas.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  projects.forEach(project => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `song-card${state.project?.name === project.name ? ' active' : ''}`;
+    const stemCount = project.stems?.length || 0;
+    button.innerHTML = `<span><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(project.tempo_bpm ? `${project.tempo_bpm} BPM` : 'BPM sin definir')} · ${escapeHtml(project.source_label || 'Sin clasificar')} · ${stemCount} stem${stemCount === 1 ? '' : 's'}</small></span><span class="song-open">${state.project?.name === project.name ? 'Abierta' : 'Abrir ›'}</span>`;
+    button.addEventListener('click', () => {
+      renderProject(project);
+      songLibraryDialog.close();
+      toast(`Proyecto abierto: ${project.name}`);
+    });
+    list.appendChild(button);
+  });
+}
+
+async function openSongLibrary() {
+  const result = await api('/api/projects');
+  state.projects = result.projects.filter(project => !project.error);
+  renderSongLibrary(state.projects);
+  songLibraryDialog.showModal();
 }
 
 function addMessage(role, content, pending = false) {
@@ -609,7 +641,7 @@ $('#new-song-form').addEventListener('submit', async event => {
       if (value instanceof File && !value.name) payload.delete(field);
     }
     const result = await api('/api/projects', {method: 'POST', body: payload});
-    renderProject(result);
+    await loadProjects(result.name);
     form.reset();
     resultElement.textContent = 'Canción creada.';
     window.setTimeout(() => newSongDialog.close(), 650);
@@ -620,11 +652,15 @@ $('#new-song-form').addEventListener('submit', async event => {
 
 document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }));
+$('#library-new-song').addEventListener('click', () => {
+  songLibraryDialog.close();
+  newSongDialog.showModal();
+});
 document.querySelectorAll('.nav-item[data-view]').forEach(button => button.addEventListener('click', () => {
   document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
   button.classList.add('active');
   if (button.dataset.view === 'home') document.querySelector('.project-column').scrollIntoView({behavior: 'smooth'});
-  else if (button.dataset.view === 'songs') $('#open-new-song').click();
+  else if (button.dataset.view === 'songs') openSongLibrary().catch(error => toast(error.message));
   else if (button.dataset.view === 'chat') $('#chat-input').focus();
 }));
 
