@@ -157,6 +157,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Agrega un efecto nativo permitido y devuelve su identidad.",
         ),
         ActionSpec(
+            "remove_track_fx",
+            True,
+            VerificationLevel.STATE,
+            "Quita una instancia ReaGate exacta de una pista mediante GUID.",
+        ),
+        ActionSpec(
             "add_master_stock_fx",
             True,
             VerificationLevel.STATE,
@@ -197,6 +203,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Configura ReaComp en unidades musicales mediante un adaptador explícito.",
+        ),
+        ActionSpec(
+            "configure_reagate",
+            True,
+            VerificationLevel.STATE,
+            "Configura ReaGate en unidades musicales y relee todos sus parámetros.",
+        ),
+        ActionSpec(
+            "apply_reagate_proposal",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una propuesta ReaGate aprobada y vigente, creando o reutilizando por GUID.",
         ),
         ActionSpec(
             "configure_reaeq_band",

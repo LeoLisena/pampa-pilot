@@ -1,0 +1,59 @@
+id: mixing.reagate.supervised-starting-points
+title: Puntos de partida supervisados para ReaGate
+stage: cleanup
+purpose: Proponer una puerta conservadora sólo cuando existen pasajes silenciosos medibles.
+principles:
+  - No aplicar puerta por rutina a stems generados por Suno.
+  - El threshold se deriva de pasajes silenciosos y se mantiene lejos del programa activo.
+  - Respiraciones, consonantes, colas, sustain y ambiente tienen prioridad sobre una limpieza extrema.
+  - La propuesta siempre requiere comparación auditiva con bypass.
+profiles:
+  organic_vocal_cleanup:
+    intent: Atenuar ruido entre frases sin cortar respiraciones ni comienzos de palabra.
+    minimum_quiet_block_ratio: 0.02
+    minimum_signal_noise_gap_db: 15.0
+    threshold_margin_above_quiet_db: 6.0
+    minimum_threshold_below_active_p90_db: 12.0
+    starting_values:
+      threshold_db: -40.0
+      hysteresis_db: -3.0
+      attack_ms: 3.0
+      release_ms: 140.0
+      pre_open_ms: 5.0
+      hold_ms: 60.0
+      highpass_hz: 80.0
+      lowpass_hz: 12000.0
+      rms_ms: 5.0
+    fine_tuning:
+      - Bajar threshold si desaparecen consonantes suaves o respiraciones naturales.
+      - Aumentar hold y release si los finales de frase se cortan.
+      - Preferir edición o automatización cuando sólo existen pocos ruidos aislados.
+  organic_guitar_cleanup:
+    intent: Atenuar ruido entre secciones conservando ataque, resonancia y cola de la guitarra.
+    minimum_quiet_block_ratio: 0.02
+    minimum_signal_noise_gap_db: 18.0
+    threshold_margin_above_quiet_db: 6.0
+    minimum_threshold_below_active_p90_db: 15.0
+    starting_values:
+      threshold_db: -42.0
+      hysteresis_db: -3.0
+      attack_ms: 5.0
+      release_ms: 220.0
+      pre_open_ms: 5.0
+      hold_ms: 100.0
+      highpass_hz: 60.0
+      lowpass_hz: 15000.0
+      rms_ms: 5.0
+    fine_tuning:
+      - Aumentar hold y release si se acorta el sustain.
+      - Bajar threshold si desaparecen roces o articulaciones musicales.
+      - No usar puerta para corregir ruidos puntuales que pueden editarse.
+confidence: conservative_working_defaults
+reviewed_at: 2026-08-03
+sources:
+  - title: ReaGate parameter identities observed from REAPER 7.78
+    kind: local_live_validation
+  - title: ReaGate finite threshold range observed from REAPER 7.78
+    kind: local_live_validation
+  - title: Flujo orgánico y ajuste humano indicado por el usuario
+    kind: user_requirement

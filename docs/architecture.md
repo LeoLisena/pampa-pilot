@@ -76,7 +76,8 @@ que puedan alterar el efecto audible de un valor escrito.
 ## Límites del primer MVP
 
 - Sólo modo supervisado e interactivo.
-- Sólo efectos nativos con adaptadores explícitos, inicialmente ReaEQ/ReaComp.
+- Sólo efectos nativos con adaptadores explícitos, actualmente ReaEQ, ReaComp,
+  ReaGate y ReaLimit.
 - Sin mastering autónomo, generación musical ni modelo especialista.
 - Sin interfaz gráfica adicional.
 - Sin escritura concurrente de varios agentes.
@@ -101,4 +102,3 @@ directos en REAPER.
 - [total-reaper-mcp](https://github.com/shiehn/total-reaper-mcp)
 - [Music Flamingo de NVIDIA](https://research.nvidia.com/labs/adlr/MF/)
 - [DAWZY: Agentic AI for DAWs](https://arxiv.org/abs/2512.03289)
-

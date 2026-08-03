@@ -12,7 +12,7 @@ Toda mutación requiere:
 - `track_guid`: identidad estable de la pista;
 - `fx_guid`: identidad estable de la instancia del efecto.
 
-`add_stock_fx` permite actualmente `reacomp` y `reaeq`. Cada alta comprueba que
+`add_stock_fx` permite actualmente `reacomp`, `reaeq` y `reagate`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -45,6 +45,35 @@ high shelf, pasa-bajos y las dos variantes band-pass. Configura:
 El adaptador no cambia silenciosamente el tipo ni crea bandas. Si la banda
 solicitada no existe, rechaza la operación. Agregar o transformar bandas será una
 operación explícita posterior.
+
+## ReaGate
+
+`preview_reagate_proposal` analiza bloques de 50 ms y separa dos observaciones:
+proporción de pasajes por debajo de −40 dBFS y nivel alto de esos pasajes. No los
+denomina automáticamente ruido. Sólo propone un threshold cuando también existe
+una separación suficiente respecto del programa activo.
+
+El motor rechaza por defecto la puerta para stems de Suno. Para voz o guitarra
+orgánicas puede devolver una hipótesis `audition_only` con threshold, histéresis,
+attack, pre-open, hold, release, filtros del detector y RMS. La aplicación exige
+el ID vigente aprobado y crea o reutiliza ReaGate mediante GUID.
+
+`configure_reagate` permite el ajuste fino posterior y relee los 24 parámetros.
+El umbral finito permitido comienza en -42 dB: REAPER 7.78 representa los
+valores inferiores como `-inf`, por lo que el motor limita las propuestas a un
+valor que pueda escribir y verificar de manera reproducible.
+
+La integración fue validada en vivo con el puente 0.14.0 sobre la pista
+`Guitar`: ReaGate confirmó threshold -36.1 dB, hysteresis -3.0 dB, attack 5 ms,
+release 220 ms, pre-open 5 ms, hold 100 ms, detector 60 Hz-15 kHz y RMS 5 ms.
+La instancia temporal se eliminó después por GUID y la pista confirmó
+`fx_count: 0`.
+Además fuerza desactivados Preview Filter, Send MIDI e Invert Wet. La retirada
+de una prueba sólo acepta el GUID exacto de ReaGate y verifica que desapareció.
+
+La prueba offline del stem `3 Guitar.wav` de Suno observó 30,04 % de bloques
+quiet, −40,90 dBFS en esos pasajes y 16,55 dB de separación. Aun así devolvió
+`not_recommended`, porque el origen procesado no justifica una puerta por rutina.
 
 ## Prueba real 0.5.1
 

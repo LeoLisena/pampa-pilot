@@ -60,6 +60,33 @@ def _active_dynamics(data: Any, sample_rate: int) -> dict[str, float | None]:
     }
 
 
+def _quiet_floor(data: Any, sample_rate: int) -> dict[str, float | None]:
+    """Estimate low-level passages; this is evidence, not a noise classification."""
+
+    import numpy as np
+
+    mono = np.mean(data, axis=1, dtype=np.float64)
+    block_size = max(1, round(sample_rate * 0.05))
+    block_count = len(mono) // block_size
+    if block_count == 0:
+        return {
+            "quiet_block_ratio_below_minus_40_dbfs": None,
+            "quiet_rms_dbfs_p90_below_minus_40": None,
+        }
+    blocks = mono[: block_count * block_size].reshape(block_count, block_size)
+    block_rms = np.sqrt(np.mean(blocks * blocks, axis=1, dtype=np.float64))
+    block_db = np.full(block_rms.shape, -120.0, dtype=np.float64)
+    audible = block_rms > 0.0
+    block_db[audible] = 20.0 * np.log10(block_rms[audible])
+    quiet = block_db[block_db < -40.0]
+    return {
+        "quiet_block_ratio_below_minus_40_dbfs": float(np.mean(block_db < -40.0)),
+        "quiet_rms_dbfs_p90_below_minus_40": (
+            float(np.percentile(quiet, 90)) if quiet.size else None
+        ),
+    }
+
+
 def _spectral_metrics(data: Any, sample_rate: int) -> dict[str, Any]:
     import numpy as np
 
@@ -160,6 +187,7 @@ def analyze_audio_file(path: Path) -> dict[str, Any]:
     if data.shape[1] == 2 and np.std(data[:, 0]) > 0 and np.std(data[:, 1]) > 0:
         channel_correlation = float(np.corrcoef(data[:, 0], data[:, 1])[0, 1])
     active_dynamics = _active_dynamics(data, sample_rate)
+    quiet_floor = _quiet_floor(data, sample_rate)
     spectral = _spectral_metrics(data, sample_rate)
 
     digest = hashlib.sha256()
@@ -190,6 +218,7 @@ def analyze_audio_file(path: Path) -> dict[str, Any]:
         "active_start_seconds": float(active_indexes[0] / sample_rate) if active_indexes.size else None,
         "active_end_seconds": float((active_indexes[-1] + 1) / sample_rate) if active_indexes.size else None,
         **active_dynamics,
+        **quiet_floor,
         **spectral,
     }
 

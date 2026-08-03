@@ -46,3 +46,20 @@ def test_write_analysis_creates_utf8_json(tmp_path: Path) -> None:
     assert stored["schema_version"] == "0.1"
     assert stored["metrics_are_observations_not_mix_decisions"] is True
     assert stored["stems"][0]["file_name"] == "señal.wav"
+
+
+def test_analysis_measures_quiet_floor_without_calling_it_noise(tmp_path: Path) -> None:
+    sample_rate = 48_000
+    rng = np.random.default_rng(7)
+    quiet = rng.normal(0.0, 0.001, sample_rate).astype(np.float32)
+    time = np.arange(sample_rate, dtype=np.float32) / sample_rate
+    active = 0.2 * np.sin(2.0 * np.pi * 220.0 * time)
+    mono = np.concatenate((quiet, active))
+    path = tmp_path / "quiet-and-active.wav"
+    sf.write(path, np.column_stack((mono, mono)), sample_rate, subtype="FLOAT")
+
+    result = analyze_audio_file(path)
+
+    assert result["quiet_block_ratio_below_minus_40_dbfs"] == pytest.approx(0.5)
+    assert result["quiet_rms_dbfs_p90_below_minus_40"] == pytest.approx(-60.0, abs=1.0)
+    assert result["active_rms_dbfs_p90"] > -20.0

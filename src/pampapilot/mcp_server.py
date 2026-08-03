@@ -9,6 +9,10 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from .bridge_client import BridgeClient
+from .gate_proposal import (
+    build_reagate_application_payload,
+    propose_reagate as build_reagate_proposal,
+)
 from .media_discovery import (
     discover_song_media as discover_song_media_files,
     resolve_input_file,
@@ -368,6 +372,57 @@ def propose_track_processing(
 
     audio_path = resolve_input_file(file_path, suffixes={".wav"})
     return build_track_processing_proposal(audio_path, role, source_kind)
+
+
+@mcp.tool(
+    title="Proponer limpieza conservadora con ReaGate",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_reagate_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "guitar"],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Mide silencios y sólo propone puerta cuando existe separación suficiente."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_reagate_proposal(audio_path, role, source_kind)
+
+
+@mcp.tool(
+    title="Aplicar propuesta aprobada de ReaGate",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_reagate_proposal(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "guitar"],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Recalcula la evidencia y aplica sólo la propuesta vigente aprobada."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    proposal = build_reagate_proposal(audio_path, role, source_kind)
+    payload = build_reagate_application_payload(
+        proposal, approved_proposal_id, fx_guid
+    )
+    return _call(
+        "apply_reagate_proposal",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+        timeout_seconds=30.0,
+    )
 
 
 @mcp.tool(
@@ -899,13 +954,35 @@ def apply_track_mix_batch(
 def add_stock_fx(
     project_ref: str,
     track_guid: str,
-    fx_type: Literal["reacomp", "reaeq"],
+    fx_type: Literal["reacomp", "reaeq", "reagate"],
 ) -> dict[str, Any]:
-    """Agrega ReaComp o ReaEQ y verifica identidad, GUID y estado."""
+    """Agrega ReaComp, ReaEQ o ReaGate y verifica identidad, GUID y estado."""
 
     return _call(
         "add_stock_fx",
         {"project_ref": project_ref, "track_guid": track_guid, "fx_type": fx_type},
+    )
+
+
+@mcp.tool(
+    title="Quitar ReaGate de una pista",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def remove_track_fx(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Quita exclusivamente la instancia ReaGate indicada y verifica el resultado."""
+
+    return _call(
+        "remove_track_fx",
+        {"project_ref": project_ref, "track_guid": track_guid, "fx_guid": fx_guid},
     )
 
 
@@ -1018,7 +1095,7 @@ def configure_reacomp(
     project_ref: str,
     track_guid: str,
     fx_guid: str,
-    threshold_db: Annotated[float, Field(ge=-60.0, le=0.0)],
+    threshold_db: Annotated[float, Field(ge=-42.0, le=0.0)],
     ratio: Annotated[float, Field(ge=1.0, le=10.0)],
     attack_ms: Annotated[float, Field(ge=0.0, le=200.0)],
     release_ms: Annotated[float, Field(ge=5.0, le=1000.0)],
@@ -1043,6 +1120,50 @@ def configure_reacomp(
             "rms_ms": rms_ms,
             "auto_makeup": auto_makeup,
             "auto_release": auto_release,
+        },
+    )
+
+
+@mcp.tool(
+    title="Configurar puerta ReaGate",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_reagate(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    threshold_db: Annotated[float, Field(ge=-42.0, le=0.0)],
+    hysteresis_db: Annotated[float, Field(ge=-12.0, le=0.0)],
+    attack_ms: Annotated[float, Field(ge=0.0, le=200.0)],
+    release_ms: Annotated[float, Field(ge=5.0, le=2000.0)],
+    pre_open_ms: Annotated[float, Field(ge=0.0, le=100.0)],
+    hold_ms: Annotated[float, Field(ge=0.0, le=1000.0)],
+    highpass_hz: Annotated[float, Field(ge=0.0, le=5000.0)],
+    lowpass_hz: Annotated[float, Field(ge=1000.0, le=20000.0)],
+    rms_ms: Annotated[float, Field(ge=0.0, le=100.0)] = 5.0,
+) -> dict[str, Any]:
+    """Configura un ReaGate por GUID y verifica valores y modos seguros."""
+
+    return _call(
+        "configure_reagate",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "threshold_db": threshold_db,
+            "hysteresis_db": hysteresis_db,
+            "attack_ms": attack_ms,
+            "release_ms": release_ms,
+            "pre_open_ms": pre_open_ms,
+            "hold_ms": hold_ms,
+            "highpass_hz": highpass_hz,
+            "lowpass_hz": lowpass_hz,
+            "rms_ms": rms_ms,
         },
     )
 

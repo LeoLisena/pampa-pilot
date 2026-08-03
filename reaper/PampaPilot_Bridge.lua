@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.13.0"
+local BRIDGE_VERSION = "0.14.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -683,7 +683,7 @@ local function set_numeric_parameter(
   end
 end
 
-local function set_reacomp_boolean_parameter(track, fx_index, ident, target)
+local function set_boolean_parameter(track, fx_index, ident, target)
   local parameter_index = find_fx_parameter_by_ident(track, fx_index, ident)
   local normalized = target and 1.0 or 0.0
   if not reaper.TrackFX_SetParamNormalized(
@@ -733,6 +733,15 @@ local function require_reacomp(track, fx_index)
     error("el FX indicado no es ReaComp")
   end
   if not fx.enabled or fx.offline then error("ReaComp debe estar activo y online") end
+  return fx
+end
+
+local function require_reagate(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reagate", 1, true) then
+    error("el FX indicado no es ReaGate")
+  end
+  if not fx.enabled or fx.offline then error("ReaGate debe estar activo y online") end
   return fx
 end
 
@@ -852,11 +861,49 @@ local function apply_reacomp_parameters(track, fx_index, spec, expected_guid)
   set_numeric_parameter(track, fx_index, "3:_Release", spec.release_ms, 1.01, "ms")
   set_numeric_parameter(track, fx_index, "13:_RMS_size", spec.rms_ms, 0.11, "ms")
   set_numeric_parameter(track, fx_index, "14:_Knee", spec.knee_db, 0.11)
-  set_reacomp_boolean_parameter(
+  set_boolean_parameter(
     track, fx_index, "15:_Auto_Make_Up_Gain", spec.auto_makeup)
-  set_reacomp_boolean_parameter(track, fx_index, "16:_Auto_Release", spec.auto_release)
+  set_boolean_parameter(track, fx_index, "16:_Auto_Release", spec.auto_release)
   local fx = read_fx(track, fx_index, true)
   if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaComp cambió") end
+  return fx
+end
+
+local function validate_reagate_parameters(params)
+  if type(params) ~= "table" then error("parameters de ReaGate debe ser un objeto") end
+  local spec = {
+    threshold_db = require_number(params.threshold_db, "threshold_db", -42.0, 0.0),
+    hysteresis_db = require_number(params.hysteresis_db, "hysteresis_db", -12.0, 0.0),
+    attack_ms = require_number(params.attack_ms, "attack_ms", 0.0, 200.0),
+    release_ms = require_number(params.release_ms, "release_ms", 5.0, 2000.0),
+    pre_open_ms = require_number(params.pre_open_ms, "pre_open_ms", 0.0, 100.0),
+    hold_ms = require_number(params.hold_ms, "hold_ms", 0.0, 1000.0),
+    highpass_hz = require_number(params.highpass_hz, "highpass_hz", 0.0, 5000.0),
+    lowpass_hz = require_number(params.lowpass_hz, "lowpass_hz", 1000.0, 20000.0),
+    rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 100.0),
+  }
+  if spec.highpass_hz >= spec.lowpass_hz then
+    error("highpass_hz debe ser menor que lowpass_hz")
+  end
+  return spec
+end
+
+local function apply_reagate_parameters(track, fx_index, spec, expected_guid)
+  require_reagate(track, fx_index)
+  set_numeric_parameter(track, fx_index, "0:_Threshold", spec.threshold_db, 0.11)
+  set_numeric_parameter(track, fx_index, "1:_Attack", spec.attack_ms, 0.11, "ms")
+  set_numeric_parameter(track, fx_index, "2:_Release", spec.release_ms, 1.01, "ms")
+  set_numeric_parameter(track, fx_index, "3:_Pre_open", spec.pre_open_ms, 0.11, "ms")
+  set_numeric_parameter(track, fx_index, "4:_Hold", spec.hold_ms, 1.01, "ms")
+  set_numeric_parameter(track, fx_index, "5:_Lowpass", spec.lowpass_hz, 1.01)
+  set_numeric_parameter(track, fx_index, "6:_Hipass", spec.highpass_hz, 1.01)
+  set_numeric_parameter(track, fx_index, "12:_Hysteresis", spec.hysteresis_db, 0.11)
+  set_numeric_parameter(track, fx_index, "14:_RMS_size", spec.rms_ms, 0.11, "ms")
+  set_boolean_parameter(track, fx_index, "13:_Preview_Filter", false)
+  set_boolean_parameter(track, fx_index, "15:_Send_MIDI", false)
+  set_boolean_parameter(track, fx_index, "18:_Invert_Wet", false)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaGate cambió") end
   return fx
 end
 
@@ -1603,6 +1650,8 @@ function ACTIONS.add_stock_fx(params, request_id)
     plugin_name, expected_name, description = "ReaComp (Cockos)", "reacomp", "agregar ReaComp"
   elseif fx_type == "reaeq" then
     plugin_name, expected_name, description = "ReaEQ (Cockos)", "reaeq", "agregar ReaEQ"
+  elseif fx_type == "reagate" then
+    plugin_name, expected_name, description = "ReaGate (Cockos)", "reagate", "agregar ReaGate"
   else
     error("FX nativo no permitido")
   end
@@ -1629,6 +1678,38 @@ function ACTIONS.add_stock_fx(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.remove_track_fx(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local fx_index = find_fx_by_guid(track, fx_guid)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reagate", 1, true) then
+    error("sólo se permite quitar ReaGate mediante esta acción")
+  end
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "quitar ReaGate de pista", function()
+      reaper.TrackFX_Delete(track, fx_index)
+      if reaper.TrackFX_GetCount(track) ~= before_count - 1 then
+        error("la cantidad de FX de la pista no disminuyó exactamente en uno")
+      end
+      for observed_index = 0, reaper.TrackFX_GetCount(track) - 1 do
+        if reaper.TrackFX_GetFXGUID(track, observed_index) == fx_guid then
+          error("ReaGate continúa presente después de quitarlo")
+        end
+      end
+      return {
+        project_ref = ref,
+        removed_fx = fx,
+        track = read_track(track, index),
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 
@@ -1847,6 +1928,84 @@ function ACTIONS.configure_reacomp(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.configure_reagate(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  require_reagate(track, fx_index)
+  local spec = validate_reagate_parameters(params)
+
+  local result = run_transaction(project, request_id, "configurar ReaGate", function()
+    local fx = apply_reagate_parameters(track, fx_index, spec, params.fx_guid)
+    return {
+      project_ref = ref,
+      fx = fx,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.apply_reagate_proposal(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, track_index = find_track_by_guid(project, params.track_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-f]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal minúsculo")
+  end
+  local mode = require_string(params.mode, "mode", 32)
+  if mode ~= "reuse_existing" and mode ~= "create_new" then
+    error("modo de ReaGate no permitido")
+  end
+  local spec = validate_reagate_parameters(params.parameters)
+  local requested_guid = nil
+  if mode == "reuse_existing" then
+    requested_guid = require_string(params.fx_guid, "fx_guid", 64)
+    require_reagate(track, find_fx_by_guid(track, requested_guid))
+  else
+    if params.fx_guid ~= nil then error("create_new no admite fx_guid") end
+    if count_fx_by_name_fragment(track, "reagate") > 0 then
+      error("la pista ya contiene ReaGate; vincule su GUID para evitar duplicados")
+    end
+  end
+
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar propuesta ReaGate " .. proposal_id, function()
+      local fx_index
+      if mode == "reuse_existing" then
+        fx_index = find_fx_by_guid(track, requested_guid)
+      else
+        fx_index = reaper.TrackFX_AddByName(track, "ReaGate (Cockos)", false, -1)
+        if fx_index < 0 then error("REAPER no pudo agregar ReaGate") end
+      end
+      local expected_count = before_count + (mode == "create_new" and 1 or 0)
+      if reaper.TrackFX_GetCount(track) ~= expected_count then
+        error("la cantidad de FX no coincide al aplicar ReaGate")
+      end
+      local fx = apply_reagate_parameters(track, fx_index, spec, requested_guid)
+      local track_state = read_track(track, track_index)
+      if track_state.fx_count ~= expected_count then
+        error("la lectura posterior de la pista no coincide")
+      end
+      return {
+        project_ref = ref,
+        proposal_id = proposal_id,
+        source_sha256 = source_sha256,
+        mode = mode,
+        track = track_state,
+        fx = fx,
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 

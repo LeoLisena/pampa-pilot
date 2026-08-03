@@ -43,6 +43,10 @@ vuelve a leerlos y conserva una transacción de deshacer segura.
 El mismo puente puede renderizar un candidato WAV de 24 bits a un destino nuevo
 dentro de `sessions/`, verificar que REAPER lo creó y enlazar inmediatamente
 su identidad SHA-256 con el análisis técnico del archivo.
+El puente 0.14.0 descubre FX instalados y usados, y agrega un flujo supervisado
+de ReaGate. Mide pasajes silenciosos sin clasificarlos automáticamente como
+ruido, rechaza la puerta por rutina en stems de Suno y exige aprobación por ID
+antes de crear o configurar una instancia identificada por GUID.
 
 ## Decisiones iniciales
 
