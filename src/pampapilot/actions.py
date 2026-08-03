@@ -73,6 +73,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Renderiza un WAV nuevo mediante ajustes explícitos y devuelve un recibo.",
         ),
         ActionSpec(
+            "render_master_ab_snapshot",
+            True,
+            VerificationLevel.STATE,
+            "Renderiza un WAV A/B y restaura los ajustes de render dentro de la misma llamada.",
+        ),
+        ActionSpec(
             "restore_render_settings",
             True,
             VerificationLevel.STATE,

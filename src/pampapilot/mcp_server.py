@@ -12,6 +12,7 @@ from .ambience_proposal import (
     build_ambience_application_payload,
     propose_ambience as build_ambience_proposal,
 )
+from .ab_comparison import build_loudness_matched_ab
 from .audio_integrity import analyze_audio_integrity
 from .bridge_client import BridgeClient
 from .deesser_proposal import (
@@ -913,6 +914,121 @@ def apply_project_track_producer_chain(
         {"project_ref": project_ref, "track_guid": track_guid, **payload},
         timeout_seconds=60.0,
     )
+
+
+@mcp.tool(
+    title="Aplicar cadena y crear comparación A/B",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_and_compare_project_track_producer_chain(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    output_directory: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings", "keys"
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    approved_chain_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    include_artistic_saturation: bool = False,
+    sample_rate_hz: Annotated[int, Field(ge=44100, le=192000)] = 48000,
+) -> dict[str, Any]:
+    """Renderiza A, aplica una cadena aprobada, renderiza B y crea copias igualadas."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    directory = resolve_output_directory(output_directory)
+    state = _call(
+        "get_track_state",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+    chain = build_track_producer_chain(
+        audio_path,
+        role,
+        source_kind,
+        existing_fx=state["result"]["fx"],
+        include_artistic_saturation=include_artistic_saturation,
+    )
+    payload = build_producer_chain_application_payload(chain, approved_chain_id)
+    prefix = f"producer-chain-{approved_chain_id}"
+    paths = {
+        "a_original": resolve_output_file(
+            directory / f"{prefix}-A-original.wav", suffixes={".wav"}
+        ),
+        "b_processed": resolve_output_file(
+            directory / f"{prefix}-B-processed.wav", suffixes={".wav"}
+        ),
+        "a_matched": resolve_output_file(
+            directory / f"{prefix}-A-matched.wav", suffixes={".wav"}
+        ),
+        "b_matched": resolve_output_file(
+            directory / f"{prefix}-B-matched.wav", suffixes={".wav"}
+        ),
+    }
+    a_reply = _call(
+        "render_master_ab_snapshot",
+        {
+            "project_ref": project_ref,
+            "output_file": str(paths["a_original"]),
+            "sample_rate_hz": sample_rate_hz,
+        },
+        timeout_seconds=900.0,
+    )
+    apply_reply = _call(
+        "apply_producer_fx_chain",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+        timeout_seconds=60.0,
+    )
+    try:
+        b_reply = _call(
+            "render_master_ab_snapshot",
+            {
+                "project_ref": project_ref,
+                "output_file": str(paths["b_processed"]),
+                "sample_rate_hz": sample_rate_hz,
+            },
+            timeout_seconds=900.0,
+        )
+        comparison = build_loudness_matched_ab(
+            paths["a_original"],
+            paths["b_processed"],
+            paths["a_matched"],
+            paths["b_matched"],
+        )
+    except Exception as exc:
+        return {
+            "schema_version": "0.1",
+            "kind": "pampapilot_producer_chain_ab_failed_after_application",
+            "chain": chain,
+            "A_render": a_reply,
+            "application": apply_reply,
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+            "recovery": "La cadena quedó como última transacción PampaPilot y puede deshacerse.",
+            "verification": {
+                "state_verified": bool(apply_reply["observations"]["state_verified"]),
+                "signal_verified": False,
+                "perceptually_evaluated": False,
+            },
+        }
+    return {
+        "schema_version": "0.1",
+        "kind": "pampapilot_producer_chain_ab",
+        "chain": chain,
+        "A_render": a_reply,
+        "application": apply_reply,
+        "B_render": b_reply,
+        "comparison": comparison,
+        "undo_transaction_request_id": apply_reply["result"]["transaction_request_id"],
+        "verification": {
+            "state_verified": bool(apply_reply["observations"]["state_verified"]),
+            "signal_verified": True,
+            "perceptually_evaluated": False,
+        },
+    }
 
 
 @mcp.tool(

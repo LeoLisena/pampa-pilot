@@ -35,6 +35,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "apply_vocal_rider_envelope",
                 "apply_dynamic_resonance_proposal",
                 "apply_project_track_producer_chain",
+                "apply_and_compare_project_track_producer_chain",
                 "configure_item_fades",
                 "create_track",
                 "set_track_pan",

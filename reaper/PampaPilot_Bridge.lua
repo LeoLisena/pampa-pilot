@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.24.0"
+local BRIDGE_VERSION = "0.25.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -534,6 +534,140 @@ local function apply_render_configuration_snapshot(project, snapshot)
       error("REAPER no restauró " .. field[1])
     end
   end
+end
+
+local function require_renderable_media_online(project)
+  local offline = {}
+  for track_index = 0, reaper.CountTracks(project) - 1 do
+    local track = reaper.GetTrack(project, track_index)
+    local _, track_name = reaper.GetTrackName(track)
+    for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+      local item = reaper.GetTrackMediaItem(track, item_index)
+      local take = reaper.GetActiveTake(item)
+      local source = take and reaper.GetMediaItemTake_Source(take) or nil
+      if source then
+        local source_type = reaper.GetMediaSourceType(source, "") or ""
+        if source_type ~= "MIDI" then
+          local sample_rate = reaper.GetMediaSourceSampleRate(source)
+          local source_length = reaper.GetMediaSourceLength(source)
+          if sample_rate <= 0 or source_length <= 0 then
+            offline[#offline + 1] = {
+              track = track_name or ("track " .. tostring(track_index + 1)),
+              item = item_index,
+            }
+          end
+        end
+      end
+    end
+  end
+  if #offline > 0 then
+    local first = offline[1]
+    error(
+      "no se puede renderizar: " .. tostring(#offline)
+      .. " fuente(s) de audio están OFFLINE; primera: "
+      .. first.track .. " item " .. tostring(first.item + 1)
+    )
+  end
+end
+
+local function render_master_snapshot(project, ref, output_file, sample_rate_hz)
+  require_renderable_media_online(project)
+  local output_directory, output_name = output_file:match(
+    "^(.*)[\\/]([^\\/]+)%.wav$"
+  )
+  if not output_directory or output_directory == "" or not output_name
+      or output_name == "" then
+    error("output_file no contiene directorio y nombre WAV válidos")
+  end
+  if output_name:find("[%$%*%?]") then
+    error("output_file no puede contener comodines de render")
+  end
+  reaper.RecursiveCreateDirectory(output_directory, 0)
+  local previous = read_render_configuration_snapshot(project)
+
+  local function set_number(description, value)
+    reaper.GetSetProjectInfo(project, description, value, true)
+    local observed = reaper.GetSetProjectInfo(project, description, 0, false)
+    if math.abs(observed - value) > 0.000001 then
+      error("REAPER no conservó " .. description)
+    end
+  end
+  local function set_string(description, value)
+    local ok = reaper.GetSetProjectInfo_String(project, description, value, true)
+    if not ok then error("REAPER rechazó " .. description) end
+    local observed_ok, observed = reaper.GetSetProjectInfo_String(
+      project, description, "", false
+    )
+    if not observed_ok or observed ~= value then
+      error("REAPER no conservó " .. description)
+    end
+  end
+
+  local ok, result = xpcall(function()
+    set_number("RENDER_SETTINGS", 0)
+    set_number("RENDER_BOUNDSFLAG", 1)
+    set_number("RENDER_CHANNELS", 2)
+    set_number("RENDER_SRATE", sample_rate_hz)
+    set_number("RENDER_TAILFLAG", 0)
+    set_number("RENDER_ADDTOPROJ", 0)
+    set_number("RENDER_DITHER", 0)
+    set_number("RENDER_NORMALIZE", 0)
+    set_string("RENDER_FILE", output_directory)
+    set_string("RENDER_PATTERN", output_name)
+    set_string("RENDER_FORMAT", WAV_24_BIT_RENDER_CONFIGURATION)
+    set_string("RENDER_FORMAT2", "")
+
+    local settings = read_render_settings(project, ref)
+    local targets = {}
+    for target in settings.render_targets:gmatch("[^;]+") do
+      targets[#targets + 1] = target
+    end
+    if #targets ~= 1
+        or normalized_absolute_path(targets[1], "render_target")
+          ~= normalized_absolute_path(output_file, "output_file") then
+      error("REAPER no resolvió exactamente el destino WAV solicitado")
+    end
+    local action_text = reaper.kbd_getTextFromCmd(
+      RENDER_PROJECT_AUTOCLOSE_COMMAND_ID, 0
+    )
+    if type(action_text) ~= "string" or action_text == "" then
+      error("REAPER no reconoce la acción de render automático")
+    end
+    local started_at_unix = os.time()
+    reaper.Main_OnCommandEx(RENDER_PROJECT_AUTOCLOSE_COMMAND_ID, 0, project)
+    if not file_exists(output_file) then error("REAPER no creó el render A/B") end
+    local stream = io.open(output_file, "rb")
+    if not stream then error("no se pudo verificar el render A/B") end
+    local output_size_bytes = stream:seek("end")
+    stream:close()
+    if not output_size_bytes or output_size_bytes <= 44 then
+      error("el render A/B no contiene audio WAV válido")
+    end
+    local _, _, observed_ref = project_context()
+    if observed_ref ~= ref then error("el proyecto activo cambió durante el render") end
+    return {
+      project_ref = ref,
+      output_file = output_file,
+      output_size_bytes = output_size_bytes,
+      sample_rate_hz = sample_rate_hz,
+      channels = 2,
+      wav_bit_depth = 24,
+      render_started_at_unix = started_at_unix,
+      render_completed_at_unix = os.time(),
+      render_action_id = RENDER_PROJECT_AUTOCLOSE_COMMAND_ID,
+      render_action_text = action_text,
+    }
+  end, debug.traceback)
+  local restored, restore_error = xpcall(function()
+    apply_render_configuration_snapshot(project, previous)
+  end, debug.traceback)
+  if not restored then
+    error("falló la restauración de render: " .. tostring(restore_error))
+  end
+  if not ok then error(result) end
+  result.render_settings_restored = true
+  result.render_settings = read_render_settings(project, ref)
+  return result
 end
 
 local function find_fx_by_guid(track, guid)
@@ -1818,6 +1952,26 @@ function ACTIONS.render_master_candidate(params, request_id)
       }
     end
   )
+  return result, observations(true)
+end
+
+function ACTIONS.render_master_ab_snapshot(params, _)
+  local project, project_path, ref = require_project(params)
+  if project_path == "" then error("el proyecto debe tener una ruta guardada") end
+  local play_state_before = reaper.GetPlayStateEx(project)
+  if play_state_before ~= 0 then reaper.OnStopButtonEx(project) end
+  if reaper.GetPlayStateEx(project) ~= 0 then
+    error("REAPER no pudo detener el transporte antes de renderizar")
+  end
+  local output_file = require_allowed_render_path(params.output_file)
+  local sample_rate_hz = require_number(
+    params.sample_rate_hz, "sample_rate_hz", 44100, 192000
+  )
+  if sample_rate_hz % 1 ~= 0 then error("sample_rate_hz debe ser entero") end
+  local result = render_master_snapshot(project, ref, output_file, sample_rate_hz)
+  result.project_path = project_path
+  result.transport_was_stopped = play_state_before ~= 0
+  result.net_project_processing_change = false
   return result, observations(true)
 end
 

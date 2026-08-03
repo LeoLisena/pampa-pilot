@@ -123,7 +123,8 @@ Referencias de diseño para carga genérica de presets:
       comprobar orden y rollback conjunto bajo una carga más representativa.
 - [ ] Integrar vocal rider y routing de ambiente como etapas coordinadas pero
       con transacciones separadas y recibos compuestos.
-- [ ] Implementar render A/B con loudness igualado para la cadena completa.
+- [x] Implementar render A/B con loudness igualado para la cadena completa.
+- [x] Validar en vivo el flujo A/B 0.25.0 y deshacer la cadena al finalizar.
 
 - [x] Escritura segura de envolvente de volumen por GUID, ligada a WAV/ítem,
       sin sobrescribir puntos existentes y con lectura posterior completa.
@@ -145,7 +146,7 @@ Referencias de diseño para carga genérica de presets:
 - [ ] Audicionar candidatos detectados sobre grabaciones orgánicas reales y
       calibrar umbrales antes de habilitar cualquier reparación.
 - [ ] Encadenado de tratamientos por rol con orden explícito de FX.
-- [ ] Comparación A/B con loudness igualado y restauración exacta del estado.
+- [x] Comparación A/B con loudness igualado y restauración exacta del estado.
 
 ## Análisis y decisiones de productor pendientes
 

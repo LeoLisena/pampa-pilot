@@ -107,3 +107,35 @@ independiente confirmaron GUID, 51 parámetros, estado online, orden y
 `fx_count=2`. La única transacción se deshizo: Guitar volvió a un FX, el mismo
 ReaFIR, fader -7 dB, paneo central y automatización Trim/Read. El proyecto quedó
 en 14 pistas y 85 BPM. No se modificó ni renderizó el WAV.
+
+## Comparación A/B 0.25.0
+
+`apply_and_compare_project_track_producer_chain` ejecuta un flujo explícito:
+render A del mix sin la propuesta, aplicación de la cadena aprobada como una
+única transacción, render B y creación offline de dos copias igualadas por
+loudness integrado. Los WAV originales A/B se conservan intactos.
+
+El objetivo es el LUFS de la versión más silenciosa. Por eso el motor sólo
+atenúa la más fuerte: no introduce clipping ni confunde una subida de volumen
+con una mejora. Verifica que tasa, canales y duración coincidan y exige un error
+de igualado no mayor a 0,1 LU. Esto valida la preparación técnica, no la calidad
+musical; `perceptually_evaluated` permanece falso hasta una escucha humana.
+
+Cada render restaura internamente directorio, patrón, formato, bounds, sample
+rate, canales, tail, normalización y dither previos. La cadena queda como última
+transacción PampaPilot, de modo que puede conservarse o deshacerse después de
+la audición.
+
+Antes de renderizar, el puente recorre las tomas de audio activas y rechaza el
+flujo si REAPER informa sample rate o duración de fuente iguales a cero. Así un
+estado `OFFLINE` no puede producir silencios que parezcan comparaciones válidas.
+
+### Validación real 0.25.0
+
+El flujo se ejecutó sobre Guitar en `Mi Pequeño Sol - MIDI Validation`: A sin la
+propuesta midió -20,190 LUFS y B con la resonancia dinámica midió -20,218 LUFS.
+El igualado atenuó A en 0,028 dB y dejó B sin ganancia; las dos copias resultaron
+en -20,218 LUFS, con error 0,000 LU. REAPER restauró sus ajustes de render y la
+transacción `46e9bf1b-3220-4060-b48c-65a9c1d5449f` se deshizo. Guitar volvió a
+un único ReaFIR con el mismo GUID, -7 dB y paneo central. La escucha perceptual
+continúa pendiente y los cuatro WAV quedaron bajo `sessions/Mi Pequeño Sol/renders/ab`.

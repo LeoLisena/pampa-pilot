@@ -78,6 +78,9 @@ transparentes y usa un perfil especialmente suave para Suno.
 El puente 0.24.0 puede aplicar una cadena FX correctiva completa y ordenada en
 una única transacción: Gate, EQ, resonancia, compresión, de-esser y saturación.
 El plan cruza los FX existentes, conserva los ajenos y bloquea ambigüedades.
+El puente 0.25.0 agrega la preparación A/B: renderiza el mix antes y después de
+la cadena, restaura los ajustes de render tras cada archivo y crea copias WAV
+igualadas por LUFS mediante atenuación. La decisión sonora sigue siendo humana.
 
 ## Decisiones iniciales
 
