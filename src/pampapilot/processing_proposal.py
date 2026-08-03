@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from .audio_analysis import analyze_audio_file
 from .media_discovery import WORKSPACE_ROOT
@@ -228,3 +228,62 @@ def propose_track_processing(
         source_kind,
         knowledge_root=knowledge_root,
     )
+
+
+def build_processing_application_payload(
+    proposal: Mapping[str, Any],
+    approved_proposal_id: str,
+    bindings: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Bind an approved proposal to explicit FX identities for one transaction."""
+
+    observed_id = proposal.get("proposal_id")
+    if not isinstance(observed_id, str) or approved_proposal_id != observed_id:
+        raise ValueError("approved_proposal_id does not match the current proposal")
+    if proposal.get("execute") is not False:
+        raise ValueError("only a non-executing proposal can be approved")
+    source = proposal.get("source")
+    chain = proposal.get("chain")
+    if not isinstance(source, dict) or not isinstance(chain, list) or not chain:
+        raise ValueError("proposal is missing source or chain data")
+
+    binding_by_processor: dict[str, Mapping[str, Any]] = {}
+    for binding in bindings:
+        processor = binding.get("processor")
+        if processor not in {"reaeq", "reacomp"}:
+            raise ValueError(f"unsupported processor binding: {processor}")
+        if processor in binding_by_processor:
+            raise ValueError(f"duplicate processor binding: {processor}")
+        fx_guid = binding.get("fx_guid")
+        if fx_guid is not None and (not isinstance(fx_guid, str) or not fx_guid.strip()):
+            raise ValueError(f"invalid fx_guid binding for {processor}")
+        binding_by_processor[processor] = binding
+
+    expected_processors = [step.get("processor") for step in chain]
+    if set(binding_by_processor) != set(expected_processors):
+        raise ValueError("bindings must match every proposed processor exactly")
+
+    steps = []
+    for step in chain:
+        processor = step["processor"]
+        parameters = step.get("parameters")
+        if not isinstance(parameters, dict):
+            raise ValueError(f"proposal step has no parameters: {processor}")
+        fx_guid = binding_by_processor[processor].get("fx_guid")
+        steps.append(
+            {
+                "processor": processor,
+                "mode": "reuse_existing" if fx_guid else "create_new",
+                "fx_guid": fx_guid,
+                "parameters": dict(parameters),
+            }
+        )
+
+    source_sha256 = source.get("sha256")
+    if not isinstance(source_sha256, str) or len(source_sha256) != 64:
+        raise ValueError("proposal source does not contain a SHA-256 identity")
+    return {
+        "proposal_id": approved_proposal_id,
+        "source_sha256": source_sha256,
+        "steps": steps,
+    }

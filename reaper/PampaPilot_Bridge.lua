@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.7.0"
+local BRIDGE_VERSION = "0.8.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -461,6 +461,15 @@ local function require_reaeq(track, fx_index)
   return fx
 end
 
+local function require_reacomp(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reacomp", 1, true) then
+    error("el FX indicado no es ReaComp")
+  end
+  if not fx.enabled or fx.offline then error("ReaComp debe estar activo y online") end
+  return fx
+end
+
 local function read_reaeq_band(track, fx_index, band_type, band_index)
   local parameters = {}
   for parameter_index = 0, reaper.TrackFX_GetNumParams(track, fx_index) - 1 do
@@ -488,6 +497,101 @@ local function read_reaeq_band(track, fx_index, band_type, band_index)
       track, fx_index, band_type, band_index),
     parameters = parameters,
   }
+end
+
+local function validate_reaeq_parameters(params)
+  if type(params) ~= "table" then error("parameters de ReaEQ debe ser un objeto") end
+  local band_type_name = require_string(params.band_type, "band_type", 32)
+  local band_type = REAEQ_BAND_TYPES[band_type_name]
+  if band_type == nil then error("tipo de banda ReaEQ no permitido") end
+  return {
+    band_type_name = band_type_name,
+    band_type = band_type,
+    band_index = require_integer(params.band_index, "band_index", 0, 7),
+    frequency_hz = require_number(params.frequency_hz, "frequency_hz", 20.0, 20000.0),
+    gain_db = require_number(params.gain_db, "gain_db", -24.0, 24.0),
+    q = require_number(params.q, "q", 0.1, 10.0),
+    enabled = require_boolean(params.enabled, "enabled"),
+  }
+end
+
+local function apply_reaeq_parameters(track, fx_index, spec)
+  require_reaeq(track, fx_index)
+  read_reaeq_band(track, fx_index, spec.band_type, spec.band_index)
+  if not reaper.TrackFX_SetEQParam(
+      track, fx_index, spec.band_type, spec.band_index, 0, spec.frequency_hz, false) then
+    error("REAPER rechazó la frecuencia de ReaEQ")
+  end
+  if not reaper.TrackFX_SetEQParam(
+      track, fx_index, spec.band_type, spec.band_index, 1,
+      db_to_amplitude(spec.gain_db), false) then
+    error("REAPER rechazó la ganancia de ReaEQ")
+  end
+  if not reaper.TrackFX_SetEQParam(
+      track, fx_index, spec.band_type, spec.band_index, 2, spec.q, false) then
+    error("REAPER rechazó Q de ReaEQ")
+  end
+  if not reaper.TrackFX_SetEQBandEnabled(
+      track, fx_index, spec.band_type, spec.band_index, spec.enabled) then
+    error("REAPER rechazó habilitar o deshabilitar la banda ReaEQ")
+  end
+  local band = read_reaeq_band(track, fx_index, spec.band_type, spec.band_index)
+  if band.band_type ~= spec.band_type_name then error("el tipo de banda leído no coincide") end
+  if band.enabled ~= spec.enabled then error("el estado leído de la banda no coincide") end
+  local frequency_observed = parse_formatted_number(band.parameters.frequency.formatted)
+  local gain_observed = parse_formatted_number(band.parameters.gain.formatted)
+  local q_observed = parse_formatted_number(band.parameters.q.formatted)
+  if not frequency_observed
+    or math.abs(frequency_observed - spec.frequency_hz)
+      > math.max(0.11, spec.frequency_hz * 0.001) then
+    error("la frecuencia leída de ReaEQ no coincide")
+  end
+  if not gain_observed or math.abs(gain_observed - spec.gain_db) > 0.11 then
+    error("la ganancia leída de ReaEQ no coincide")
+  end
+  if not q_observed or math.abs(q_observed - spec.q) > 0.011 then
+    error("Q leído de ReaEQ no coincide")
+  end
+  return band
+end
+
+local function validate_reacomp_parameters(params)
+  if type(params) ~= "table" then error("parameters de ReaComp debe ser un objeto") end
+  return {
+    threshold_db = require_number(params.threshold_db, "threshold_db", -60.0, 0.0),
+    ratio = require_number(params.ratio, "ratio", 1.0, 10.0),
+    attack_ms = require_number(params.attack_ms, "attack_ms", 0.0, 200.0),
+    release_ms = require_number(params.release_ms, "release_ms", 5.0, 1000.0),
+    knee_db = require_number(params.knee_db, "knee_db", 0.0, 12.0),
+    rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 100.0),
+    auto_makeup = require_boolean(params.auto_makeup, "auto_makeup"),
+    auto_release = require_boolean(params.auto_release, "auto_release"),
+  }
+end
+
+local function apply_reacomp_parameters(track, fx_index, spec, expected_guid)
+  require_reacomp(track, fx_index)
+  set_reacomp_numeric_parameter(track, fx_index, "0:_Threshold", spec.threshold_db, 0.11)
+  set_reacomp_numeric_parameter(track, fx_index, "1:_Ratio", spec.ratio, 0.011)
+  set_reacomp_numeric_parameter(track, fx_index, "2:_Attack", spec.attack_ms, 0.11)
+  set_reacomp_numeric_parameter(track, fx_index, "3:_Release", spec.release_ms, 1.01)
+  set_reacomp_numeric_parameter(track, fx_index, "13:_RMS_size", spec.rms_ms, 0.11)
+  set_reacomp_numeric_parameter(track, fx_index, "14:_Knee", spec.knee_db, 0.11)
+  set_reacomp_boolean_parameter(
+    track, fx_index, "15:_Auto_Make_Up_Gain", spec.auto_makeup)
+  set_reacomp_boolean_parameter(track, fx_index, "16:_Auto_Release", spec.auto_release)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaComp cambió") end
+  return fx
+end
+
+local function count_fx_by_name_fragment(track, fragment)
+  local count = 0
+  for fx_index = 0, reaper.TrackFX_GetCount(track) - 1 do
+    local fx = read_fx(track, fx_index, false)
+    if fx.name:lower():find(fragment, 1, true) then count = count + 1 end
+  end
+  return count
 end
 
 local function read_imported_item(item, take)
@@ -935,61 +1039,23 @@ function ACTIONS.configure_reaeq_band(params, request_id)
   local track = find_track_by_guid(project, params.track_guid)
   local fx_index = find_fx_by_guid(track, params.fx_guid)
   require_reaeq(track, fx_index)
-  local band_type_name = require_string(params.band_type, "band_type", 32)
-  local band_type = REAEQ_BAND_TYPES[band_type_name]
-  if band_type == nil then error("tipo de banda ReaEQ no permitido") end
-  local band_index = require_integer(params.band_index, "band_index", 0, 7)
-  local frequency_hz = require_number(params.frequency_hz, "frequency_hz", 20.0, 20000.0)
-  local gain_db = require_number(params.gain_db, "gain_db", -24.0, 24.0)
-  local q = require_number(params.q, "q", 0.1, 10.0)
-  local enabled = require_boolean(params.enabled, "enabled")
+  local spec = validate_reaeq_parameters(params)
 
   -- La API nativa dirige las bandas por tipo y ocurrencia dentro de ese tipo.
   -- Se exige que la banda exista; cambiar/agregar tipos será otra operación explícita.
-  read_reaeq_band(track, fx_index, band_type, band_index)
+  read_reaeq_band(track, fx_index, spec.band_type, spec.band_index)
   local result = run_transaction(project, request_id, "configurar banda ReaEQ", function()
-    if not reaper.TrackFX_SetEQParam(
-        track, fx_index, band_type, band_index, 0, frequency_hz, false) then
-      error("REAPER rechazó la frecuencia de ReaEQ")
-    end
-    if not reaper.TrackFX_SetEQParam(
-        track, fx_index, band_type, band_index, 1, db_to_amplitude(gain_db), false) then
-      error("REAPER rechazó la ganancia de ReaEQ")
-    end
-    if not reaper.TrackFX_SetEQParam(
-        track, fx_index, band_type, band_index, 2, q, false) then
-      error("REAPER rechazó Q de ReaEQ")
-    end
-    if not reaper.TrackFX_SetEQBandEnabled(
-        track, fx_index, band_type, band_index, enabled) then
-      error("REAPER rechazó habilitar o deshabilitar la banda ReaEQ")
-    end
-    local band = read_reaeq_band(track, fx_index, band_type, band_index)
-    if band.band_type ~= band_type_name then error("el tipo de banda leído no coincide") end
-    if band.enabled ~= enabled then error("el estado leído de la banda no coincide") end
-    local frequency_observed = parse_formatted_number(band.parameters.frequency.formatted)
-    local gain_observed = parse_formatted_number(band.parameters.gain.formatted)
-    local q_observed = parse_formatted_number(band.parameters.q.formatted)
-    if not frequency_observed
-      or math.abs(frequency_observed - frequency_hz) > math.max(0.11, frequency_hz * 0.001) then
-      error("la frecuencia leída de ReaEQ no coincide")
-    end
-    if not gain_observed or math.abs(gain_observed - gain_db) > 0.11 then
-      error("la ganancia leída de ReaEQ no coincide")
-    end
-    if not q_observed or math.abs(q_observed - q) > 0.011 then
-      error("Q leído de ReaEQ no coincide")
-    end
+    local band = apply_reaeq_parameters(track, fx_index, spec)
     return {
       project_ref = ref,
       track_guid = params.track_guid,
       fx = read_fx(track, fx_index, false),
       band = band,
       requested = {
-        frequency_hz = frequency_hz,
-        gain_db = gain_db,
-        q = q,
-        enabled = enabled,
+        frequency_hz = spec.frequency_hz,
+        gain_db = spec.gain_db,
+        q = spec.q,
+        enabled = spec.enabled,
       },
       transaction_request_id = request_id,
     }
@@ -1001,42 +1067,131 @@ function ACTIONS.configure_reacomp(params, request_id)
   local project, _, ref = require_project(params)
   local track = find_track_by_guid(project, params.track_guid)
   local fx_index = find_fx_by_guid(track, params.fx_guid)
-  local fx_before = read_fx(track, fx_index, false)
-  if not fx_before.name:lower():find("reacomp", 1, true) then
-    error("el FX indicado no es ReaComp")
-  end
-  if not fx_before.enabled or fx_before.offline then
-    error("ReaComp debe estar activo y online")
-  end
-
-  local threshold_db = require_number(params.threshold_db, "threshold_db", -60.0, 0.0)
-  local ratio = require_number(params.ratio, "ratio", 1.0, 10.0)
-  local attack_ms = require_number(params.attack_ms, "attack_ms", 0.0, 200.0)
-  local release_ms = require_number(params.release_ms, "release_ms", 5.0, 1000.0)
-  local knee_db = require_number(params.knee_db, "knee_db", 0.0, 12.0)
-  local rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 100.0)
-  local auto_makeup = require_boolean(params.auto_makeup, "auto_makeup")
-  local auto_release = require_boolean(params.auto_release, "auto_release")
+  require_reacomp(track, fx_index)
+  local spec = validate_reacomp_parameters(params)
 
   local result = run_transaction(project, request_id, "configurar ReaComp", function()
-    set_reacomp_numeric_parameter(track, fx_index, "0:_Threshold", threshold_db, 0.11)
-    set_reacomp_numeric_parameter(track, fx_index, "1:_Ratio", ratio, 0.011)
-    set_reacomp_numeric_parameter(track, fx_index, "2:_Attack", attack_ms, 0.11)
-    set_reacomp_numeric_parameter(track, fx_index, "3:_Release", release_ms, 1.01)
-    set_reacomp_numeric_parameter(track, fx_index, "13:_RMS_size", rms_ms, 0.11)
-    set_reacomp_numeric_parameter(track, fx_index, "14:_Knee", knee_db, 0.11)
-    set_reacomp_boolean_parameter(
-      track, fx_index, "15:_Auto_Make_Up_Gain", auto_makeup)
-    set_reacomp_boolean_parameter(track, fx_index, "16:_Auto_Release", auto_release)
-
-    local fx = read_fx(track, fx_index, true)
-    if fx.guid ~= params.fx_guid then error("el GUID de ReaComp cambió") end
+    local fx = apply_reacomp_parameters(track, fx_index, spec, params.fx_guid)
     return {
       project_ref = ref,
       fx = fx,
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.apply_processing_chain(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, track_index = find_track_by_guid(project, params.track_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-fA-F]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal")
+  end
+  if type(params.steps) ~= "table" or #params.steps < 1 or #params.steps > 2 then
+    error("steps debe contener una o dos entradas")
+  end
+
+  local validated, seen = {}, {}
+  local create_count = 0
+  for position, raw in ipairs(params.steps) do
+    if type(raw) ~= "table" then error("cada step debe ser un objeto") end
+    local processor = require_string(raw.processor, "processor", 32)
+    if processor ~= "reaeq" and processor ~= "reacomp" then
+      error("procesador no permitido en la propuesta")
+    end
+    if seen[processor] then error("procesador duplicado en la propuesta: " .. processor) end
+    seen[processor] = true
+    local mode = require_string(raw.mode, "mode", 32)
+    if mode ~= "reuse_existing" and mode ~= "create_new" then
+      error("modo de vinculación de FX no permitido")
+    end
+    local fragment = processor
+    local plugin_name = processor == "reaeq" and "ReaEQ (Cockos)" or "ReaComp (Cockos)"
+    local fx_guid = nil
+    if mode == "reuse_existing" then
+      fx_guid = require_string(raw.fx_guid, "fx_guid", 64)
+      local fx_index = find_fx_by_guid(track, fx_guid)
+      if processor == "reaeq" then
+        require_reaeq(track, fx_index)
+      else
+        require_reacomp(track, fx_index)
+      end
+    else
+      if raw.fx_guid ~= nil then error("create_new no admite fx_guid") end
+      if count_fx_by_name_fragment(track, fragment) > 0 then
+        error("la pista ya contiene " .. processor .. "; vincule su GUID para evitar duplicados")
+      end
+      create_count = create_count + 1
+    end
+    validated[position] = {
+      processor = processor,
+      mode = mode,
+      fx_guid = fx_guid,
+      plugin_name = plugin_name,
+      spec = processor == "reaeq"
+        and validate_reaeq_parameters(raw.parameters)
+        or validate_reacomp_parameters(raw.parameters),
+    }
+  end
+
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar propuesta " .. proposal_id, function()
+      local applied = {}
+      for position, step in ipairs(validated) do
+        local fx_index
+        if step.mode == "reuse_existing" then
+          fx_index = find_fx_by_guid(track, step.fx_guid)
+        else
+          local count_before_add = reaper.TrackFX_GetCount(track)
+          fx_index = reaper.TrackFX_AddByName(track, step.plugin_name, false, -1)
+          if fx_index < 0 then error("REAPER no pudo agregar " .. step.processor) end
+          if reaper.TrackFX_GetCount(track) ~= count_before_add + 1 then
+            error("la cantidad de FX no aumentó exactamente en uno")
+          end
+          local added = read_fx(track, fx_index, false)
+          if not added.name:lower():find(step.processor, 1, true) then
+            error("el FX creado no tiene la identidad esperada")
+          end
+          if not added.enabled or added.offline then
+            error("el FX creado no quedó activo y online")
+          end
+        end
+
+        if step.processor == "reaeq" then
+          local band = apply_reaeq_parameters(track, fx_index, step.spec)
+          applied[position] = {
+            processor = step.processor,
+            mode = step.mode,
+            fx = read_fx(track, fx_index, false),
+            band = band,
+          }
+        else
+          applied[position] = {
+            processor = step.processor,
+            mode = step.mode,
+            fx = apply_reacomp_parameters(track, fx_index, step.spec, step.fx_guid),
+          }
+        end
+      end
+      local track_state = read_track(track, track_index)
+      if track_state.fx_count ~= before_count + create_count then
+        error("la lectura posterior de la pista no refleja la cadena aplicada")
+      end
+      return {
+        project_ref = ref,
+        proposal_id = proposal_id,
+        source_sha256 = source_sha256,
+        track = track_state,
+        applied = applied,
+        transaction_request_id = request_id,
+      }
+    end)
   return result, observations(true)
 end
 

@@ -8,6 +8,7 @@ import soundfile as sf
 
 from pampapilot.processing_proposal import (
     KnowledgeError,
+    build_processing_application_payload,
     build_processing_proposal,
     propose_track_processing,
 )
@@ -98,3 +99,63 @@ def test_audio_wrapper_does_not_write_files(tmp_path: Path) -> None:
     after = {path.resolve() for path in tmp_path.rglob("*")}
     assert proposal["execute"] is False
     assert after == before
+
+
+def test_approved_proposal_binds_existing_and_new_fx() -> None:
+    proposal = build_processing_proposal(
+        _metrics(), "lead_vocal", knowledge_root=KNOWLEDGE_ROOT
+    )
+
+    payload = build_processing_application_payload(
+        proposal,
+        proposal["proposal_id"],
+        [
+            {"processor": "reaeq", "fx_guid": "{EQ-GUID}"},
+            {"processor": "reacomp", "fx_guid": None},
+        ],
+    )
+
+    assert payload["proposal_id"] == proposal["proposal_id"]
+    assert payload["source_sha256"] == "a" * 64
+    assert payload["steps"][0]["mode"] == "reuse_existing"
+    assert payload["steps"][0]["fx_guid"] == "{EQ-GUID}"
+    assert payload["steps"][1]["mode"] == "create_new"
+    assert payload["steps"][1]["parameters"]["threshold_db"] == -10.0
+
+
+def test_stale_or_incomplete_approval_is_rejected() -> None:
+    proposal = build_processing_proposal(
+        _metrics(), "lead_vocal", knowledge_root=KNOWLEDGE_ROOT
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        build_processing_application_payload(
+            proposal,
+            "0" * 24,
+            [
+                {"processor": "reaeq", "fx_guid": "{EQ-GUID}"},
+                {"processor": "reacomp", "fx_guid": "{COMP-GUID}"},
+            ],
+        )
+    with pytest.raises(ValueError, match="every proposed processor"):
+        build_processing_application_payload(
+            proposal,
+            proposal["proposal_id"],
+            [{"processor": "reacomp", "fx_guid": "{COMP-GUID}"}],
+        )
+
+
+def test_duplicate_processor_binding_is_rejected() -> None:
+    proposal = build_processing_proposal(
+        _metrics(), "lead_vocal", knowledge_root=KNOWLEDGE_ROOT
+    )
+
+    with pytest.raises(ValueError, match="duplicate processor binding"):
+        build_processing_application_payload(
+            proposal,
+            proposal["proposal_id"],
+            [
+                {"processor": "reaeq", "fx_guid": "{EQ-1}"},
+                {"processor": "reaeq", "fx_guid": "{EQ-2}"},
+            ],
+        )

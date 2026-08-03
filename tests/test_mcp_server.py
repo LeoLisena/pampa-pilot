@@ -37,6 +37,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_song_media",
                 "analyze_midi",
                 "propose_track_processing",
+                "apply_processing_proposal",
                 "preview_midi_cleanup",
                 "clean_midi_files",
                 "preview_song_preparation",
@@ -73,6 +74,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_song_media"].annotations.read_only_hint)
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
         self.assertTrue(tools["propose_track_processing"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_processing_proposal"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)
+        self.assertFalse(tools["apply_processing_proposal"].annotations.destructive_hint)
         self.assertTrue(tools["preview_midi_cleanup"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.destructive_hint)

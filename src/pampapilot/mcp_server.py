@@ -21,7 +21,10 @@ from .midi_cleanup import (
     run_cleanup,
 )
 from .midi_import import build_midi_import_payload
-from .processing_proposal import propose_track_processing as build_track_processing_proposal
+from .processing_proposal import (
+    build_processing_application_payload,
+    propose_track_processing as build_track_processing_proposal,
+)
 from .song_preparation import (
     SongPreparationConfig,
     build_song_manifest,
@@ -76,6 +79,11 @@ class MidiImportItem(BaseModel):
     track_name: Annotated[str, Field(min_length=1, max_length=128)]
     position_quarter_notes: Annotated[float, Field(ge=0.0, le=1_000_000.0)] = 0.0
     muted: bool = True
+
+
+class ProcessingFxBinding(BaseModel):
+    processor: Literal["reaeq", "reacomp"]
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None
 
 
 def _call(
@@ -141,6 +149,48 @@ def propose_track_processing(
 
     audio_path = resolve_input_file(file_path, suffixes={".wav"})
     return build_track_processing_proposal(audio_path, role, source_kind)
+
+
+@mcp.tool(
+    title="Aplicar propuesta de procesamiento aprobada",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_processing_proposal(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal["lead_vocal", "backing_vocals", "bass", "drums"],
+    approved_proposal_id: Annotated[
+        str, Field(min_length=24, max_length=24, pattern=r"^[0-9a-f]{24}$")
+    ],
+    bindings: Annotated[list[ProcessingFxBinding], Field(min_length=1, max_length=2)],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Recalcula y aplica sólo la propuesta cuyo ID aprobó el usuario."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    proposal = build_track_processing_proposal(audio_path, role, source_kind)
+    application = build_processing_application_payload(
+        proposal,
+        approved_proposal_id,
+        [binding.model_dump() for binding in bindings],
+    )
+    return _call(
+        "apply_processing_chain",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            **application,
+        },
+        timeout_seconds=30.0,
+    )
 
 
 @mcp.tool(

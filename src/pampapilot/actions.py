@@ -121,6 +121,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Agrega un instrumento virtual permitido y verifica su identidad y rol.",
         ),
         ActionSpec(
+            "apply_processing_chain",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una propuesta aprobada como una única transacción verificable.",
+        ),
+        ActionSpec(
             "configure_reacomp",
             True,
             VerificationLevel.STATE,

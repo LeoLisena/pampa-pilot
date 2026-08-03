@@ -28,9 +28,11 @@ clipping antes de guardarla. El puente 0.5.1 agrega ReaComp y ReaEQ por GUID. El
 compresor se configura en unidades musicales y ReaEQ permite controlar bandas
 existentes por tipo e índice, con frecuencia, ganancia, Q y estado habilitado. Los
 valores se vuelven a leer dentro de una única transacción reversible.
-El puente 0.7.0 separa además instrumentos de efectos: `add_instrument` admite
+Desde el puente 0.7.0 se separan además instrumentos de efectos: `add_instrument` admite
 inicialmente ReaSynth y comprueba que REAPER lo registre realmente como VSTi de
 la pista, sin acoplar la interfaz a nombres arbitrarios de plugins.
+El puente 0.8.0 aplica una propuesta aprobada completa en una sola transacción,
+reutiliza FX mediante GUID explícitos y rechaza duplicaciones implícitas.
 
 ## Decisiones iniciales
 
@@ -142,6 +144,9 @@ para devolver cadenas tentativas de ReaEQ/ReaComp. Nunca aplica el plan: separa
 observaciones, conocimiento, parámetros y verificaciones pendientes, y exige
 aprobación del usuario. En stems de Suno advierte expresamente que el audio puede
 venir procesado y que no debe comprimirse ni ecualizarse por rutina.
+`apply_processing_proposal` exige el ID exacto aprobado, vincula cada procesador
+a un GUID existente o a una creación explícita y aplica toda la cadena como una
+sola transacción reversible.
 
 ## Preparación de canción
 

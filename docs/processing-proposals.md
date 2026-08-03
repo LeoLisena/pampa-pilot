@@ -48,3 +48,34 @@ El puente volvió a leer nombres, GUID, estado online y todos los valores, que
 coincidieron exactamente con la propuesta. Esto constituye verificación de
 estado; la reducción real de ganancia y la mejora perceptual continúan sin
 verificar.
+
+## Aplicación aprobada
+
+`apply_processing_proposal` vuelve a analizar el mismo WAV y recalcula el plan.
+Sólo continúa si `approved_proposal_id` coincide exactamente, de modo que un
+cambio de audio, reglas o parámetros invalida una aprobación anterior.
+
+Cada procesador debe vincularse explícitamente:
+
+- con `fx_guid`, reutiliza esa instancia y verifica su identidad;
+- sin `fx_guid`, crea una instancia nueva, pero rechaza hacerlo si ya existe un
+  FX del mismo tipo para evitar duplicados silenciosos.
+
+ReaEQ y ReaComp se configuran dentro de una única transacción de REAPER. Si
+falla cualquier alta, identidad, parámetro o lectura posterior, el puente
+revierte la cadena completa. La aprobación autoriza valores concretos, pero no
+implica verificación de señal ni aprobación perceptual.
+
+### Validación real de la aplicación
+
+La propuesta `039154a7c6626d7f8ebb0d05` fue aprobada explícitamente y aplicada a
+`Vocals` mediante el puente 0.8.0. La transacción reutilizó los GUID existentes
+de ReaEQ y ReaComp, mantuvo `fx_count = 2` y volvió a leer de forma independiente:
+
+- ReaEQ: 80,0 Hz, ganancia 0,0 dB y Q 0,71;
+- ReaComp: −10,0 dB, 1,500:1, 15,0 ms, 120 ms, RMS 5,0 ms, knee 3,0 dB y
+  ambos automatismos desactivados.
+
+La transacción `bf139559-ca3b-451b-b8b3-769319a9ddac` quedó disponible para
+undo. `state_verified` fue verdadero; `signal_verified` y
+`perceptually_evaluated` permanecieron falsos.
