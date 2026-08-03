@@ -1713,6 +1713,16 @@ def _copy_upload(upload: UploadFile, destination: Path, suffixes: set[str]) -> N
         shutil.copyfileobj(upload.file, output, length=1024 * 1024)
 
 
+def _named_uploads(uploads: list[UploadFile | str]) -> list[UploadFile]:
+    """Ignore the empty multipart placeholders emitted by optional file inputs."""
+
+    return [
+        upload
+        for upload in uploads
+        if not isinstance(upload, str) and Path(upload.filename or "").name
+    ]
+
+
 @app.post("/api/projects", status_code=201)
 def create_project(
     title: Annotated[str, Form(min_length=1, max_length=128)],
@@ -1721,8 +1731,8 @@ def create_project(
         Literal["suno_stems", "organic_multitrack", "mixed", "unknown"], Form()
     ],
     lyrics: Annotated[str, Form(max_length=100_000)] = "",
-    stems: Annotated[list[UploadFile], File()] = [],
-    midi: Annotated[list[UploadFile], File()] = [],
+    stems: Annotated[list[UploadFile | str], File()] = [],
+    midi: Annotated[list[UploadFile | str], File()] = [],
     reference: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
     try:
@@ -1736,9 +1746,9 @@ def create_project(
     stem_dir.mkdir(parents=True)
     midi_dir.mkdir(parents=True)
     try:
-        for upload in stems:
+        for upload in _named_uploads(stems):
             _copy_upload(upload, stem_dir, {".wav", ".flac"})
-        for upload in midi:
+        for upload in _named_uploads(midi):
             _copy_upload(upload, midi_dir, {".mid", ".midi"})
         if reference is not None and reference.filename:
             references = WORKSPACE_ROOT / "media" / "references"

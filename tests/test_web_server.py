@@ -1,9 +1,13 @@
 import unittest
 from unittest.mock import patch
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 
-from pampapilot.web_server import _suggested_track_names, app, runtime
+from pampapilot.web_server import _named_uploads, _suggested_track_names, app, runtime
 
 
 class WebServerTests(unittest.TestCase):
@@ -44,6 +48,41 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(names["5 Drums"], "Drums 1")
         self.assertEqual(names["7 Drums"], "Drums 2")
         self.assertEqual(names["6 Drums- OK"], "Drums- OK")
+
+    def test_empty_optional_file_inputs_are_not_treated_as_uploads(self):
+        selected = UploadFile(BytesIO(b"RIFF"), filename="DE LA LLUVIA.wav")
+        empty_midi = UploadFile(BytesIO(b""), filename="")
+
+        self.assertEqual(_named_uploads([selected, empty_midi]), [selected])
+
+    def test_project_upload_accepts_a_stem_with_empty_optional_file_fields(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch("pampapilot.web_server.WORKSPACE_ROOT", root),
+                patch(
+                    "pampapilot.web_server._project_view",
+                    return_value={"name": "Drum De la lluvia"},
+                ),
+            ):
+                response = self.client.post(
+                    "/api/projects",
+                    data={
+                        "title": "Drum De la lluvia",
+                        "bpm": "85",
+                        "source_kind": "suno_stems",
+                        "lyrics": "",
+                    },
+                    files=[
+                        ("stems", ("DE LA LLUVIA.wav", b"RIFF", "audio/wav")),
+                        ("midi", ("", b"", "application/octet-stream")),
+                    ],
+                )
+
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertTrue(
+                (root / "media" / "inbox" / "stems" / "Drum De la lluvia" / "DE LA LLUVIA.wav").is_file()
+            )
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")

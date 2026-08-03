@@ -590,7 +590,11 @@ $('#new-song-form').addEventListener('submit', async event => {
   progress.classList.remove('hidden');
   resultElement.textContent = 'Cargando y organizando archivos…';
   try {
-    const result = await api('/api/projects', {method: 'POST', body: new FormData(form)});
+    const payload = new FormData(form);
+    for (const [field, value] of Array.from(payload.entries())) {
+      if (value instanceof File && !value.name) payload.delete(field);
+    }
+    const result = await api('/api/projects', {method: 'POST', body: payload});
     renderProject(result);
     form.reset();
     resultElement.textContent = 'Canción creada.';
