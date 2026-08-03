@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Mapping
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -25,6 +25,7 @@ from .processing_proposal import (
     build_processing_application_payload,
     propose_track_processing as build_track_processing_proposal,
 )
+from .production_plan import build_production_plan
 from .song_preparation import (
     SongPreparationConfig,
     build_song_manifest,
@@ -321,6 +322,45 @@ def diagnose_song(
         default_source_kind,
         [override.model_dump() for override in (source_overrides or [])],
     )
+
+
+@mcp.tool(
+    title="Previsualizar plan de producción",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_production_plan(
+    project_ref: str,
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    default_source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+    source_overrides: Annotated[
+        list[StemSourceOverride] | None, Field(max_length=128)
+    ] = None,
+) -> dict[str, Any]:
+    """Cruza diagnóstico de señal con pistas y FX actuales; no modifica REAPER."""
+
+    overrides = [override.model_dump() for override in (source_overrides or [])]
+    diagnosis = build_song_diagnosis(
+        song_name,
+        bpm,
+        default_source_kind,
+        overrides,
+    )
+    project_reply = _call("get_project_state")
+    project_state = project_reply["result"]
+    if project_state["project_ref"] != project_ref:
+        raise ValueError("the active REAPER project changed while building the plan")
+    details: dict[str, Mapping[str, Any]] = {}
+    for track in project_state["tracks"]:
+        if track["fx_count"] > 0:
+            reply = _call(
+                "get_track_state",
+                {"project_ref": project_ref, "track_guid": track["guid"]},
+            )
+            details[track["guid"]] = reply["result"]
+    return build_production_plan(diagnosis, project_state, details)
 
 
 @mcp.tool(

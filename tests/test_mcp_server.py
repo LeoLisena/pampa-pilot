@@ -39,6 +39,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "propose_track_processing",
                 "apply_processing_proposal",
                 "diagnose_song",
+                "preview_production_plan",
                 "preview_midi_cleanup",
                 "clean_midi_files",
                 "preview_song_preparation",
@@ -79,6 +80,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.destructive_hint)
         self.assertTrue(tools["diagnose_song"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_production_plan"].annotations.read_only_hint)
         self.assertTrue(tools["preview_midi_cleanup"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.destructive_hint)
