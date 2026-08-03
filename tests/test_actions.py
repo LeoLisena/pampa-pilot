@@ -7,7 +7,7 @@ from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 class ActionCatalogTests(unittest.TestCase):
     def test_first_mvp_has_small_explicit_allowlist(self) -> None:
-        self.assertEqual(len(ACTION_SPECS), 55)
+        self.assertEqual(len(ACTION_SPECS), 57)
         self.assertFalse(require_action("health_check").mutates_project)
         self.assertFalse(require_action("discover_project_fx").mutates_project)
         self.assertFalse(require_action("discover_installed_fx").mutates_project)
@@ -66,6 +66,8 @@ class ActionCatalogTests(unittest.TestCase):
             VerificationLevel.STATE,
         )
         self.assertTrue(require_action("save_project_as").mutates_project)
+        self.assertTrue(require_action("create_song_project").mutates_project)
+        self.assertTrue(require_action("open_song_project").mutates_project)
 
     def test_arbitrary_action_is_rejected(self) -> None:
         with self.assertRaisesRegex(LookupError, "acción no permitida"):

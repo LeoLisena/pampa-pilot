@@ -62,6 +62,7 @@ function renderProject(project) {
   $('#project-source').textContent = `Origen: ${project.source_label || 'Sin clasificar'}`;
   $('#compact-project-title').textContent = project.name;
   $('#compact-project-meta').textContent = `${project.tempo_bpm ? `${project.tempo_bpm} BPM` : 'BPM sin definir'} · ${project.source_label || 'Sin clasificar'}`;
+  $('#sync-reaper').textContent = project.reaper_project_path ? 'Sincronizar con REAPER' : 'Importar en REAPER';
   const timeline = $('#timeline');
   timeline.innerHTML = '';
   if (!project.sections?.length) {
@@ -79,7 +80,7 @@ function renderProject(project) {
   const list = $('#stem-list');
   list.innerHTML = '';
   if (!project.stems?.length) list.innerHTML = '<div class="empty-state">Todavía no se cargaron stems.</div>';
-  (project.stems || []).forEach(stem => {
+  (project.stems || []).forEach((stem, stemIndex) => {
     const row = document.createElement('div');
     row.className = 'stem-row';
     const badgeClass = stem.source === 'Suno' ? 'amber' : stem.source === 'Sin clasificar' ? 'neutral' : '';
@@ -89,9 +90,11 @@ function renderProject(project) {
       <span class="badge ${badgeClass}">${escapeHtml(stem.source)}</span>
       <span class="badge ${stem.status === 'Analizado' ? '' : 'neutral'}">${escapeHtml(stem.status)}</span>
       <span class="badge ${stem.problems === 'Sin problemas detectados' ? '' : 'neutral'}">${escapeHtml(stem.problems)}</span>
-      <div class="stem-actions"><button class="play-button" title="Abrir controles de producción">▶</button><button class="icon-button" title="Abrir controles">⋮</button></div>`;
+      <div class="stem-actions"><button class="stem-order-button" data-direction="up" title="Subir pista" ${stemIndex === 0 ? 'disabled' : ''}>↑</button><button class="stem-order-button" data-direction="down" title="Bajar pista" ${stemIndex === project.stems.length - 1 ? 'disabled' : ''}>↓</button><button class="stem-delete-button" title="Quitar stem">×</button><button class="play-button" title="Abrir controles de producción">▶</button></div>`;
     row.querySelector('.stem-name span:last-child').textContent = stem.name;
-    row.querySelectorAll('.stem-actions button').forEach(button => button.addEventListener('click', () => openStemTools(stem)));
+    row.querySelector('.play-button').addEventListener('click', () => openStemTools(stem));
+    row.querySelectorAll('.stem-order-button').forEach(button => button.addEventListener('click', () => moveStem(stemIndex, button.dataset.direction)));
+    row.querySelector('.stem-delete-button').addEventListener('click', () => deleteStem(stem));
     list.appendChild(row);
   });
   const banner = $('#analysis-banner');
@@ -109,6 +112,29 @@ function renderProject(project) {
     bannerText.textContent = 'Los datos técnicos aparecerán aquí después del análisis.';
     detailsButton.disabled = true;
   }
+}
+
+async function moveStem(index, direction) {
+  if (!state.project) return;
+  const names = state.project.stems.map(stem => stem.name);
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= names.length) return;
+  [names[index], names[target]] = [names[target], names[index]];
+  try {
+    const project = await api(`/api/projects/${encodeURIComponent(state.project.name)}/stem-order`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({names})
+    });
+    renderProject(project);
+  } catch (error) { toast(error.message); }
+}
+
+async function deleteStem(stem) {
+  if (!state.project || !window.confirm(`Quitar “${stem.name}” de la canción?`)) return;
+  try {
+    const project = await api(`/api/projects/${encodeURIComponent(state.project.name)}/stems/${encodeURIComponent(stem.name)}`, {method: 'DELETE'});
+    renderProject(project);
+    toast(`Stem quitado: ${stem.name}`);
+  } catch (error) { toast(error.message); }
 }
 
 function escapeHtml(value) {
@@ -160,6 +186,39 @@ async function loadProjects(preferredName = '') {
 }
 
 const songLibraryDialog = $('#song-library-dialog');
+
+$('#add-stems').addEventListener('click', () => {
+  if (!state.project) return toast('Primero creá una canción.');
+  $('#add-stems-input').click();
+});
+
+$('#add-stems-input').addEventListener('change', async event => {
+  const files = Array.from(event.currentTarget.files || []);
+  if (!state.project || !files.length) return;
+  const payload = new FormData();
+  files.forEach(file => payload.append('stems', file));
+  try {
+    const project = await api(`/api/projects/${encodeURIComponent(state.project.name)}/stems`, {method: 'POST', body: payload});
+    renderProject(project);
+    toast(`${files.length} stem${files.length === 1 ? '' : 's'} agregado${files.length === 1 ? '' : 's'}.`);
+  } catch (error) { toast(error.message); }
+  finally { event.currentTarget.value = ''; }
+});
+
+$('#sync-reaper').addEventListener('click', async event => {
+  if (!state.project) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  const previous = button.textContent;
+  button.textContent = 'Sincronizando…';
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(state.project.name)}/reaper-sync`, {method: 'POST'});
+    renderProject(result.project);
+    await refreshStatus();
+    toast(result.imported_count ? `${result.imported_count} stem(s) importados y proyecto guardado.` : 'REAPER ya estaba sincronizado.');
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; if (button.textContent === 'Sincronizando…') button.textContent = previous; }
+});
 
 function renderSongLibrary(projects) {
   const list = $('#song-library-list');

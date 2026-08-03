@@ -2,12 +2,19 @@ import unittest
 from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 
 from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
-from pampapilot.web_server import _named_uploads, _suggested_track_names, app, runtime
+from pampapilot.web_server import (
+    _named_uploads,
+    _ordered_stem_paths,
+    _suggested_track_names,
+    app,
+    runtime,
+)
 
 
 class WebServerTests(unittest.TestCase):
@@ -97,6 +104,73 @@ class WebServerTests(unittest.TestCase):
             self.assertTrue(
                 (root / "media" / "inbox" / "stems" / "Drum De la lluvia" / "DE LA LLUVIA.wav").is_file()
             )
+
+    def test_project_can_be_created_without_media(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch("pampapilot.web_server.WORKSPACE_ROOT", root),
+                patch("pampapilot.web_server._project_view", return_value={"name": "Borrador"}),
+            ):
+                response = self.client.post(
+                    "/api/projects",
+                    data={"title": "Borrador", "bpm": "92", "source_kind": "unknown", "lyrics": ""},
+                )
+
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertTrue((root / "media" / "inbox" / "stems" / "Borrador" / "session.json").is_file())
+
+    def test_configured_stem_order_is_deterministic(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "media" / "inbox" / "stems" / "Song"
+            directory.mkdir(parents=True)
+            for name in ("Bass.wav", "Drums.wav", "Vocals.wav"):
+                (directory / name).write_bytes(b"RIFF")
+            with (
+                patch("pampapilot.web_server.WORKSPACE_ROOT", root),
+                patch("pampapilot.web_server._project_metadata", return_value={"stem_order": ["Vocals", "Drums", "Bass"]}),
+            ):
+                ordered = _ordered_stem_paths("Song")
+            self.assertEqual([path.stem for path in ordered], ["Vocals", "Drums", "Bass"])
+
+    def test_reaper_sync_creates_project_and_imports_only_missing_sources(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stem = root / "media" / "inbox" / "stems" / "Song" / "Vocals.wav"
+            stem.parent.mkdir(parents=True)
+            stem.write_bytes(b"RIFF")
+            metadata = {"tempo_bpm": 85, "source_kind": "suno_stems"}
+            client = unittest.mock.MagicMock()
+
+            def call(action, params=None, **_kwargs):
+                results = {
+                    "create_song_project": {"project_ref": "song-ref"},
+                    "get_track_items": {"items": []},
+                    "import_audio_batch": {"imported_count": 1},
+                    "set_project_tempo": {"tempo_bpm": 85},
+                    "save_project_as": {"track_count": 1},
+                }
+                return SimpleNamespace(result=results[action])
+
+            client.call.side_effect = call
+            with (
+                patch("pampapilot.web_server.WORKSPACE_ROOT", root),
+                patch("pampapilot.web_server._project_metadata", return_value=metadata),
+                patch("pampapilot.web_server._write_project_metadata"),
+                patch("pampapilot.web_server._project_view", return_value={"name": "Song", "stems": [{"name": "Vocals", "track_name": "Vocals"}]}),
+                patch("pampapilot.web_server.BridgeClient", return_value=client),
+                patch("pampapilot.web_server.bridge_project", side_effect=[
+                    {"result": {"project_path": "", "project_ref": "empty", "tracks": []}},
+                    {"result": {"project_path": str(root / "sessions" / "Song" / "Song.rpp"), "project_ref": "song-ref", "tracks": []}},
+                ]),
+            ):
+                response = self.client.post("/api/projects/Song/reaper-sync")
+
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["imported_count"], 1)
+            actions = [entry.args[0] for entry in client.call.call_args_list]
+            self.assertEqual(actions, ["create_song_project", "import_audio_batch", "set_project_tempo", "save_project_as"])
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")

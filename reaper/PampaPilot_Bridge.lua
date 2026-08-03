@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.28.1"
+local BRIDGE_VERSION = "0.29.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -9,6 +9,7 @@ local RENDER_PROJECT_AUTOCLOSE_COMMAND_ID = 42230
 local WAV_24_BIT_RENDER_CONFIGURATION = "ZXZhdxgAAQ=="
 local SECTION = "PampaPilotBridge"
 local INSTANCE_KEY = "active_instance"
+local NEW_PROJECT_TAB_COMMAND_ID = 40023
 
 local _, _, action_section_id, action_command_id = reaper.get_action_context()
 
@@ -4190,6 +4191,67 @@ function ACTIONS.set_project_tempo(params, request_id)
     }
   end)
   return result, observations(true)
+end
+
+function ACTIONS.create_song_project(params, _)
+  local target_path = require_allowed_project_path(params.project_path)
+  local bpm = require_number(params.bpm, "bpm", 20.0, 400.0)
+  if file_exists(target_path) then error("el proyecto de destino ya existe") end
+  local previous_project = select(1, project_context())
+  reaper.Main_OnCommand(NEW_PROJECT_TAB_COMMAND_ID, 0)
+  local project, path, ref = project_context()
+  if project == previous_project then error("REAPER no creó una pestaña de proyecto nueva") end
+  if path ~= "" or reaper.CountTracks(project) ~= 0 or reaper.CountMediaItems(project) ~= 0 then
+    error("la pestaña nueva no está vacía")
+  end
+  reaper.SetCurrentBPM(project, bpm, false)
+  if math.abs(reaper.Master_GetTempo() - bpm) > 0.000001 then
+    error("REAPER no aplicó el BPM al proyecto nuevo")
+  end
+  local directory = target_path:match("^(.*)[\\/][^\\/]+$")
+  if not directory or directory == "" then error("project_path no contiene directorio") end
+  reaper.RecursiveCreateDirectory(directory, 0)
+  reaper.Main_SaveProjectEx(project, target_path, 8)
+  local observed_project, observed_path, observed_ref = project_context()
+  if observed_project ~= project then error("REAPER cambió de proyecto durante el guardado") end
+  if normalized_absolute_path(observed_path, "observed_project_path")
+      ~= normalized_absolute_path(target_path, "project_path") then
+    error("REAPER no adoptó la ruta del proyecto nuevo")
+  end
+  if not file_exists(target_path) then error("REAPER no creó el archivo de proyecto") end
+  return {
+    project_path = observed_path,
+    project_ref = observed_ref,
+    tempo_bpm = reaper.Master_GetTempo(),
+    track_count = 0,
+    created_new_tab = true,
+    saved = true,
+  }, observations(true)
+end
+
+function ACTIONS.open_song_project(params, _)
+  local target_path = require_allowed_project_path(params.project_path)
+  if not file_exists(target_path) then error("el proyecto solicitado no existe") end
+  local previous_project = select(1, project_context())
+  reaper.Main_OnCommand(NEW_PROJECT_TAB_COMMAND_ID, 0)
+  local empty_project = select(1, project_context())
+  if empty_project == previous_project then
+    error("REAPER no creó una pestaña nueva antes de abrir el proyecto")
+  end
+  reaper.Main_openProject("noprompt:" .. target_path)
+  local project, observed_path, observed_ref = project_context()
+  if project == previous_project then error("REAPER reemplazó la pestaña anterior") end
+  if normalized_absolute_path(observed_path, "observed_project_path")
+      ~= normalized_absolute_path(target_path, "project_path") then
+    error("REAPER no abrió el proyecto solicitado")
+  end
+  return {
+    project_path = observed_path,
+    project_ref = observed_ref,
+    tempo_bpm = reaper.Master_GetTempo(),
+    track_count = reaper.CountTracks(project),
+    opened = true,
+  }, observations(false)
 end
 
 function ACTIONS.save_project_as(params, _)

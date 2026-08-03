@@ -187,6 +187,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Ajusta el tempo global y comprueba que no cambie el timing del audio.",
         ),
         ActionSpec(
+            "create_song_project",
+            True,
+            VerificationLevel.STATE,
+            "Crea una pestaña vacía, configura BPM y guarda el RPP permitido.",
+        ),
+        ActionSpec(
+            "open_song_project",
+            True,
+            VerificationLevel.STATE,
+            "Abre un RPP permitido existente y verifica su identidad.",
+        ),
+        ActionSpec(
             "save_project_as",
             True,
             VerificationLevel.STATE,

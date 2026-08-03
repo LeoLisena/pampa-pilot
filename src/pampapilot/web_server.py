@@ -90,6 +90,10 @@ class BrainSettingsInput(BaseModel):
     approval_mode: Literal["manual", "low_risk", "all"] = "manual"
 
 
+class StemOrderInput(BaseModel):
+    names: Annotated[list[str], Field(min_length=1, max_length=64)]
+
+
 class HistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: Annotated[str, Field(min_length=1, max_length=8_000)]
@@ -1234,9 +1238,19 @@ def _project_view(name: str) -> dict[str, Any]:
         for stem in (analysis or {}).get("stems", [])
         if isinstance(stem, dict)
     }
-    fallback_track_names = _suggested_track_names(list(context["stems"]))
+    raw_stems = list(context["stems"])
+    configured_order = metadata.get("stem_order", [])
+    if isinstance(configured_order, list):
+        positions = {str(value): index for index, value in enumerate(configured_order)}
+        raw_stems.sort(
+            key=lambda stem: (
+                positions.get(str(stem["name"]), len(positions)),
+                str(stem["name"]).casefold(),
+            )
+        )
+    fallback_track_names = _suggested_track_names(raw_stems)
     stems = []
-    for stem in context["stems"]:
+    for stem in raw_stems:
         diagnosed = analyzed_by_name.get(str(stem["name"]))
         stem_source_kind = (
             str(diagnosed.get("source_kind"))
@@ -1276,6 +1290,7 @@ def _project_view(name: str) -> dict[str, Any]:
         "references": context["references"],
         "verification": context["verification"],
         "analysis": analysis,
+        "reaper_project_path": metadata.get("reaper_project_path"),
     }
 
 
@@ -1766,6 +1781,36 @@ def _named_uploads(uploads: list[UploadFile | str]) -> list[UploadFile]:
     ]
 
 
+def _stem_files(name: str) -> list[Path]:
+    directory = WORKSPACE_ROOT / "media" / "inbox" / "stems" / name
+    if not directory.is_dir():
+        raise FileNotFoundError("La canción no tiene carpeta de stems")
+    return sorted(
+        (
+            path.resolve()
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix.casefold() == ".wav"
+        ),
+        key=lambda path: path.name.casefold(),
+    )
+
+
+def _invalidate_project_analysis(name: str) -> None:
+    analysis = WORKSPACE_ROOT / "sessions" / name / "analysis"
+    if analysis.is_dir():
+        shutil.rmtree(analysis)
+
+
+def _ordered_stem_paths(name: str) -> list[Path]:
+    files = _stem_files(name)
+    by_stem = {path.stem: path for path in files}
+    metadata = _project_metadata(name)
+    configured = metadata.get("stem_order", [])
+    ordered = [by_stem.pop(str(value)) for value in configured if str(value) in by_stem] if isinstance(configured, list) else []
+    ordered.extend(sorted(by_stem.values(), key=lambda path: path.name.casefold()))
+    return ordered
+
+
 @app.post("/api/projects", status_code=201)
 def create_project(
     title: Annotated[str, Form(min_length=1, max_length=128)],
@@ -1790,7 +1835,7 @@ def create_project(
     midi_dir.mkdir(parents=True)
     try:
         for upload in _named_uploads(stems):
-            _copy_upload(upload, stem_dir, {".wav", ".flac"})
+            _copy_upload(upload, stem_dir, {".wav"})
         for upload in _named_uploads(midi):
             _copy_upload(upload, midi_dir, {".mid", ".midi"})
         if reference is not None and reference.filename:
@@ -1810,6 +1855,11 @@ def create_project(
                     "tempo_bpm": bpm,
                     "source_kind": source_kind,
                     "status": "uploaded_from_web",
+                    "stem_order": [
+                        Path(upload.filename or "").stem
+                        for upload in _named_uploads(stems)
+                    ],
+                    "reaper_sync_required": bool(_named_uploads(stems)),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -1822,6 +1872,201 @@ def create_project(
         shutil.rmtree(midi_dir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _project_view(name)
+
+
+@app.post("/api/projects/{project_name}/stems")
+def add_project_stems(
+    project_name: str,
+    stems: Annotated[list[UploadFile | str], File()] = [],
+) -> dict[str, Any]:
+    try:
+        name = _validate_song_name(project_name)
+        directory = WORKSPACE_ROOT / "media" / "inbox" / "stems" / name
+        if not directory.is_dir():
+            raise FileNotFoundError("La canción no existe")
+        uploads = _named_uploads(stems)
+        if not uploads:
+            raise ValueError("Elegí al menos un WAV o FLAC")
+        existing = {path.name.casefold() for path in _stem_files(name)}
+        incoming = [Path(upload.filename or "").name for upload in uploads]
+        if len({value.casefold() for value in incoming}) != len(incoming):
+            raise ValueError("La selección contiene nombres duplicados")
+        duplicates = [value for value in incoming if value.casefold() in existing]
+        if duplicates:
+            raise FileExistsError(f"Ya existe el stem {duplicates[0]}")
+        for upload in uploads:
+            _copy_upload(upload, directory, {".wav"})
+        metadata = _project_metadata(name)
+        order = metadata.get("stem_order", [])
+        order = [str(value) for value in order] if isinstance(order, list) else []
+        order.extend(Path(value).stem for value in incoming)
+        metadata["stem_order"] = list(dict.fromkeys(order))
+        metadata["reaper_sync_required"] = True
+        _write_project_metadata(name, metadata)
+        _invalidate_project_analysis(name)
+        return _project_view(name)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.delete("/api/projects/{project_name}/stems/{stem_name}")
+def delete_project_stem(project_name: str, stem_name: str) -> dict[str, Any]:
+    try:
+        name = _validate_song_name(project_name)
+        requested = stem_name.strip()
+        matches = [path for path in _stem_files(name) if path.stem == requested]
+        if len(matches) != 1:
+            raise FileNotFoundError(f"No existe el stem {requested}")
+        metadata = _project_metadata(name)
+        imported = metadata.get("reaper_imported_stems", [])
+        if isinstance(imported, list) and requested in {str(value) for value in imported}:
+            raise FileExistsError(
+                "El stem ya está usado por REAPER. La retirada sincronizada se implementará sin borrar su WAV de origen."
+            )
+        matches[0].unlink()
+        order = metadata.get("stem_order", [])
+        if isinstance(order, list):
+            metadata["stem_order"] = [value for value in order if str(value) != requested]
+        metadata["reaper_sync_required"] = True
+        metadata.setdefault("removed_stems", []).append(requested)
+        _write_project_metadata(name, metadata)
+        _invalidate_project_analysis(name)
+        return _project_view(name)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/projects/{project_name}/stem-order")
+def order_project_stems(project_name: str, value: StemOrderInput) -> dict[str, Any]:
+    try:
+        name = _validate_song_name(project_name)
+        current = {path.stem for path in _stem_files(name)}
+        requested = [item.strip() for item in value.names]
+        if len(set(requested)) != len(requested) or set(requested) != current:
+            raise ValueError("El orden debe contener cada stem exactamente una vez")
+        metadata = _project_metadata(name)
+        metadata["stem_order"] = requested
+        metadata["reaper_sync_required"] = True
+        _write_project_metadata(name, metadata)
+        return _project_view(name)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{project_name}/reaper-sync")
+async def sync_project_to_reaper(project_name: str) -> dict[str, Any]:
+    """Create/open the song RPP and import only audio sources not already present."""
+
+    try:
+        name = _validate_song_name(project_name)
+        metadata = _project_metadata(name)
+        bpm = metadata.get("tempo_bpm")
+        if not isinstance(bpm, (int, float)):
+            raise ValueError("La canción necesita un BPM válido")
+        stems = _ordered_stem_paths(name)
+        session_dir = (WORKSPACE_ROOT / "sessions" / name).resolve()
+        project_path = (session_dir / f"{name}.rpp").resolve()
+        client = BridgeClient(timeout_seconds=30.0)
+        state = bridge_project(client)["result"]
+        active_path = str(state.get("project_path") or "")
+        same_project = active_path and os.path.normcase(os.path.abspath(active_path)) == os.path.normcase(str(project_path))
+        created = False
+        opened = False
+        if not same_project:
+            if project_path.is_file():
+                reply = await asyncio.to_thread(
+                    client.call,
+                    "open_song_project",
+                    {"project_path": str(project_path)},
+                )
+                opened = True
+            else:
+                reply = await asyncio.to_thread(
+                    client.call,
+                    "create_song_project",
+                    {"project_path": str(project_path), "bpm": float(bpm)},
+                )
+                created = True
+            project_ref = str(reply.result["project_ref"])
+        else:
+            project_ref = str(state["project_ref"])
+
+        current = bridge_project(client)["result"]
+        project_ref = str(current["project_ref"])
+        imported_sources: set[str] = set()
+        for track in current.get("tracks", []):
+            items_reply = await asyncio.to_thread(
+                client.call,
+                "get_track_items",
+                {"project_ref": project_ref, "track_guid": track["guid"]},
+            )
+            for item in items_reply.result.get("items", []):
+                take = item.get("take") if isinstance(item, dict) else None
+                source_path = take.get("source_path") if isinstance(take, dict) else None
+                if source_path:
+                    imported_sources.add(os.path.normcase(os.path.abspath(str(source_path))))
+
+        project = _project_view(name)
+        track_names = {stem["name"]: stem["track_name"] for stem in project["stems"]}
+        missing = [
+            path for path in stems
+            if os.path.normcase(os.path.abspath(str(path))) not in imported_sources
+        ]
+        if missing:
+            await asyncio.to_thread(
+                client.call,
+                "import_audio_batch",
+                {
+                    "project_ref": project_ref,
+                    "items": [
+                        {
+                            "file_path": str(path),
+                            "track_name": track_names[path.stem],
+                            "position_seconds": 0.0,
+                        }
+                        for path in missing
+                    ],
+                },
+                timeout_seconds=60.0,
+            )
+        await asyncio.to_thread(
+            client.call,
+            "set_project_tempo",
+            {"project_ref": project_ref, "bpm": float(bpm)},
+        )
+        saved = await asyncio.to_thread(
+            client.call,
+            "save_project_as",
+            {"project_ref": project_ref, "project_path": str(project_path)},
+        )
+        metadata["reaper_project_path"] = str(project_path)
+        metadata["reaper_sync_required"] = False
+        metadata["reaper_imported_stems"] = [path.stem for path in stems]
+        _write_project_metadata(name, metadata)
+        runtime.record_activity(
+            {
+                "kind": "reaper_sync",
+                "project": name,
+                "target": "REAPER",
+                "summary": f"{len(missing)} stem(s) importados; proyecto guardado.",
+                "reaper_modified": bool(created or missing),
+            }
+        )
+        return {
+            "project": _project_view(name),
+            "project_path": str(project_path),
+            "created": created,
+            "opened": opened,
+            "imported_count": len(missing),
+            "already_present_count": len(stems) - len(missing),
+            "track_count": saved.result.get("track_count"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/chat")

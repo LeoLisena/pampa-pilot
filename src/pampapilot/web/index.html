@@ -60,7 +60,7 @@
         </section>
 
         <section class="panel stems-panel">
-          <div class="panel-title"><h2>Stems del proyecto</h2><button class="icon-button" id="open-capabilities-stems" title="Ver herramientas">☷</button></div>
+          <div class="panel-title"><h2>Stems del proyecto</h2><div class="panel-actions"><input id="add-stems-input" type="file" accept=".wav,audio/wav" multiple hidden><button class="secondary-button compact-action" id="add-stems">＋ Agregar</button><button class="primary-button compact-action" id="sync-reaper">Importar en REAPER</button><button class="icon-button" id="open-capabilities-stems" title="Ver herramientas">☷</button></div></div>
           <div class="stem-header"><span>Stem</span><span>Origen</span><span>Estado</span><span>Problemas</span><span></span></div>
           <div id="stem-list"><div class="empty-state">Cargando stems…</div></div>
         </section>
@@ -122,7 +122,7 @@
         <label>Título<input name="title" type="text" maxlength="128" required></label>
         <label>BPM<input name="bpm" type="number" min="20" max="400" step="0.01" required></label>
         <label>Origen principal<select name="source_kind"><option value="suno_stems">Suno</option><option value="organic_multitrack">Grabación orgánica</option><option value="mixed">Suno + orgánico</option><option value="unknown">Sin clasificar</option></select></label>
-        <label class="file-field">Stems WAV/FLAC<input name="stems" type="file" accept=".wav,.flac,audio/wav,audio/flac" multiple></label>
+        <label class="file-field">Stems WAV<input name="stems" type="file" accept=".wav,audio/wav" multiple></label>
         <label class="file-field">Archivos MIDI<input name="midi" type="file" accept=".mid,.midi,audio/midi" multiple></label>
         <label class="file-field">Referencia opcional<input name="reference" type="file" accept=".wav,.flac,audio/wav,audio/flac"></label>
       </div>
