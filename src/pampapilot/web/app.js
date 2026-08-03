@@ -3,6 +3,7 @@ const $ = (selector) => document.querySelector(selector);
 const pageParameters = new URLSearchParams(window.location.search);
 const compactMode = pageParameters.get('compact') === '1';
 const requestedProject = pageParameters.get('project') || '';
+const savedReasoningMode = localStorage.getItem('pampapilot.reasoningMode') || 'auto';
 if (compactMode) {
   document.body.classList.add('compact-mode');
   document.title = requestedProject ? `PampaPilot Compacto - ${requestedProject}` : 'PampaPilot Compacto';
@@ -30,6 +31,34 @@ function setStatus(selector, connected, text) {
   element.querySelector('span').textContent = text;
 }
 
+function chatHistoryKey(projectName) {
+  return `pampapilot.chat.${projectName}`;
+}
+
+function loadChatHistory(projectName) {
+  try {
+    const value = JSON.parse(localStorage.getItem(chatHistoryKey(projectName)) || '[]');
+    return Array.isArray(value)
+      ? value.filter(item => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string').slice(-100)
+      : [];
+  } catch { return []; }
+}
+
+function saveChatHistory() {
+  if (!state.project) return;
+  localStorage.setItem(chatHistoryKey(state.project.name), JSON.stringify(state.history.slice(-100)));
+}
+
+function renderChatHistory() {
+  const messages = $('#messages');
+  messages.innerHTML = '';
+  if (!state.history.length) {
+    addMessage('assistant', 'Estoy listo para analizar el proyecto y proponerte cambios conservadores. Nunca modificaré REAPER sin tu aprobación.');
+    return;
+  }
+  state.history.forEach(item => addMessage(item.role, item.content));
+}
+
 async function refreshStatus() {
   try {
     const result = await api('/api/status');
@@ -46,15 +75,17 @@ async function refreshStatus() {
 }
 
 function renderProject(project) {
-  if (state.project?.name !== project.name) {
+  const projectChanged = state.project?.name !== project.name;
+  if (projectChanged) {
     let conversations = {};
     try { conversations = JSON.parse(localStorage.getItem('pampapilot.conversations') || '{}'); } catch { conversations = {}; }
     state.conversationId = conversations[project.name] || crypto.randomUUID();
     conversations[project.name] = state.conversationId;
     localStorage.setItem('pampapilot.conversations', JSON.stringify(conversations));
-    state.history = [];
+    state.history = loadChatHistory(project.name);
   }
   state.project = project;
+  if (projectChanged) renderChatHistory();
   localStorage.setItem('pampapilot.activeProject', project.name);
   if (compactMode) document.title = `PampaPilot Compacto - ${project.name}`;
   $('#project-title').textContent = project.name;
@@ -323,12 +354,13 @@ $('#chat-form').addEventListener('submit', async event => {
   try {
     const result = await api('/api/chat', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project_name: state.project.name, message, history: state.history.slice(-8), conversation_id: state.conversationId})
+      body: JSON.stringify({project_name: state.project.name, message, history: state.history.slice(-8), conversation_id: state.conversationId, reasoning_mode: $('#reasoning-mode').value})
     });
     pending.remove();
     window.clearTimeout(slowNotice);
     addMessage('assistant', result.message);
     state.history.push({role: 'user', content: message}, {role: 'assistant', content: result.message});
+    saveChatHistory();
     renderProposal(result.proposal);
     if (result.proposal?.status === 'applied') {
       const application = result.proposal.application || {};
@@ -343,6 +375,17 @@ $('#chat-form').addEventListener('submit', async event => {
       : error.message;
     addMessage('assistant', `No pude completar la consulta: ${detail}`);
   }
+});
+
+$('#reasoning-mode').value = ['auto', 'fast', 'deep'].includes(savedReasoningMode) ? savedReasoningMode : 'auto';
+$('#reasoning-mode').addEventListener('change', event => {
+  localStorage.setItem('pampapilot.reasoningMode', event.currentTarget.value);
+});
+
+window.addEventListener('storage', event => {
+  if (!state.project || event.key !== chatHistoryKey(state.project.name)) return;
+  state.history = loadChatHistory(state.project.name);
+  renderChatHistory();
 });
 
 $('#chat-input').addEventListener('keydown', event => {

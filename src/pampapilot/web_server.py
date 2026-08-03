@@ -104,6 +104,7 @@ class ChatInput(BaseModel):
     message: Annotated[str, Field(min_length=1, max_length=8_000)]
     history: Annotated[list[HistoryMessage], Field(max_length=20)] = []
     conversation_id: Annotated[str, Field(min_length=1, max_length=64)] = "default"
+    reasoning_mode: Literal["auto", "fast", "deep"] = "auto"
 
 
 class ProposalDecision(BaseModel):
@@ -2144,8 +2145,9 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 messages = [{"role": "user", "content": value.message}]
         else:
             messages = [{"role": "user", "content": value.message}]
-        use_reasoning = (
-            deep_context
+        use_reasoning = value.reasoning_mode == "deep" or (
+            value.reasoning_mode == "auto"
+            and deep_context
             and not direct_action
             and request_needs_reasoning(value.message)
         )
@@ -2161,6 +2163,8 @@ async def chat(value: ChatInput) -> dict[str, Any]:
         )
         response = parse_agent_response(result.content)
         response["context_level"] = context_level
+        response["reasoning_mode"] = value.reasoning_mode
+        response["reasoning_used"] = use_reasoning
         response["timing"] = {
             key: result.stats.get(key)
             for key in (

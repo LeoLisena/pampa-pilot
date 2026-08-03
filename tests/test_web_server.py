@@ -277,6 +277,30 @@ class WebServerTests(unittest.TestCase):
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")
+    def test_chat_reasoning_mode_overrides_automatic_selection(self, context, chat):
+        from pampapilot.lmstudio_client import LMStudioChatResult
+
+        context.return_value = {"song": {"title": "Test"}, "stems": []}
+        chat.return_value = LMStudioChatResult('{"message":"Respuesta","proposal":null}', "reasoning-mode", {})
+
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "project_name": "Test",
+                "message": "analizá y proponé una mejora",
+                "history": [],
+                "conversation_id": "reasoning-mode-test",
+                "reasoning_mode": "fast",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(chat.call_args.kwargs["reasoning"], "off")
+        self.assertEqual(response.json()["reasoning_mode"], "fast")
+        self.assertFalse(response.json()["reasoning_used"])
+
+    @patch("pampapilot.web_server.LMStudioClient.chat_result")
+    @patch("pampapilot.web_server.build_project_context")
     def test_deep_chat_refreshes_context_when_analysis_changes(self, context, chat):
         from pampapilot.lmstudio_client import LMStudioChatResult
 

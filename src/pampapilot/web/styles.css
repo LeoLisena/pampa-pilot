@@ -147,7 +147,7 @@ h2 { margin: 0; font-size: 16px; }
 .finding-list li span { font-size: 12px; }
 .finding-list li small, .no-findings { color: var(--muted); font-size: 11px; margin: 0; }
 .info-icon { width: 28px; height: 28px; display: grid; place-items: center; color: #58aafa; border: 2px solid #58aafa; border-radius: 50%; font-weight: 700; }
-.assistant-panel { background: #0b151f; border-left: 1px solid var(--line); padding: 22px 18px 12px; display: grid; grid-template-rows: auto 1fr auto auto auto; gap: 12px; min-height: 0; }
+.assistant-panel { background: #0b151f; border-left: 1px solid var(--line); padding: 22px 18px 12px; display: grid; grid-template-rows: auto 1fr auto auto auto auto; gap: 12px; min-height: 0; }
 .assistant-title { display: flex; align-items: center; gap: 9px; padding: 0 5px 10px; }
 .assistant-title span { color: #8dc7ff; }
 .assistant-title button { margin-left: auto; }
@@ -164,6 +164,8 @@ h2 { margin: 0; font-size: 16px; }
 .proposal-card { border: 1px solid #73571d; border-radius: 10px; background: #1b1a13; padding: 13px; }
 .proposal-card h3 { font-size: 13px; color: #f4be4c; margin: 0 0 5px; }
 .proposal-card p { color: #a9a89e; font-size: 11px; margin: 0 0 10px; }
+.chat-options { display: flex; justify-content: flex-end; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
+.chat-options select { border: 1px solid #334553; border-radius: 6px; background: #111c26; color: #c8d7e1; padding: 5px 7px; font-size: 10px; }
 .proposal-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
 .proposal-actions button { padding: 8px 5px; border-radius: 6px; cursor: pointer; background: #202831; border: 1px solid #3a4854; font-size: 11px; }
 .proposal-actions .apply { background: #2779c8; border-color: #3e91df; }
@@ -208,7 +210,7 @@ body.compact-mode .status-pill { padding: 6px 7px; font-size: 9px; white-space: 
 body.compact-mode .status-pill i { width: 7px; height: 7px; margin-right: 4px; }
 body.compact-mode .compact-launch { padding: 6px 8px; font-size: 10px; }
 body.compact-mode .workspace { display: block; height: calc(100vh - 50px); }
-body.compact-mode .assistant-panel { height: 100%; padding: 10px 10px 8px; border-left: 0; grid-template-rows: auto auto 1fr auto auto auto; gap: 8px; }
+body.compact-mode .assistant-panel { height: 100%; padding: 10px 10px 8px; border-left: 0; grid-template-rows: auto auto 1fr auto auto auto auto; gap: 8px; }
 body.compact-mode .assistant-title { padding: 0 2px 3px; }
 body.compact-mode .messages { padding: 2px; gap: 8px; }
 body.compact-mode .message { max-width: 96%; padding: 10px 11px; font-size: 11px; }
