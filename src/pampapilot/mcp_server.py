@@ -9,6 +9,10 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from .bridge_client import BridgeClient
+from .deesser_proposal import (
+    build_deesser_application_payload,
+    propose_deesser as build_deesser_proposal,
+)
 from .gate_proposal import (
     build_reagate_application_payload,
     propose_reagate as build_reagate_proposal,
@@ -420,6 +424,55 @@ def apply_reagate_proposal(
     )
     return _call(
         "apply_reagate_proposal",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+        timeout_seconds=30.0,
+    )
+
+
+@mcp.tool(
+    title="Previsualizar de-esser vocal con ReaXcomp",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_deesser_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Mide picos de 5-10 kHz y propone sólo compresión de la banda superior."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_deesser_proposal(audio_path, source_kind)
+
+
+@mcp.tool(
+    title="Aplicar propuesta aprobada de de-esser",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_deesser_proposal(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    source_kind: Literal[
+        "suno_stems", "organic_multitrack", "unknown"
+    ] = "unknown",
+) -> dict[str, Any]:
+    """Recalcula y aplica sólo la propuesta de de-esser vigente aprobada."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    proposal = build_deesser_proposal(audio_path, source_kind)
+    payload = build_deesser_application_payload(
+        proposal, approved_proposal_id, fx_guid
+    )
+    return _call(
+        "apply_deesser_proposal",
         {"project_ref": project_ref, "track_guid": track_guid, **payload},
         timeout_seconds=30.0,
     )
@@ -954,9 +1007,9 @@ def apply_track_mix_batch(
 def add_stock_fx(
     project_ref: str,
     track_guid: str,
-    fx_type: Literal["reacomp", "reaeq", "reagate"],
+    fx_type: Literal["reacomp", "reaeq", "reagate", "reaxcomp"],
 ) -> dict[str, Any]:
-    """Agrega ReaComp, ReaEQ o ReaGate y verifica identidad, GUID y estado."""
+    """Agrega ReaComp, ReaEQ, ReaGate o ReaXcomp y verifica su estado."""
 
     return _call(
         "add_stock_fx",
@@ -965,7 +1018,7 @@ def add_stock_fx(
 
 
 @mcp.tool(
-    title="Quitar ReaGate de una pista",
+    title="Quitar FX de dinámica permitido de una pista",
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,
@@ -978,7 +1031,7 @@ def remove_track_fx(
     track_guid: Annotated[str, Field(min_length=1, max_length=64)],
     fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
 ) -> dict[str, Any]:
-    """Quita exclusivamente la instancia ReaGate indicada y verifica el resultado."""
+    """Quita exclusivamente la instancia ReaGate o ReaXcomp indicada por GUID."""
 
     return _call(
         "remove_track_fx",
@@ -1095,7 +1148,7 @@ def configure_reacomp(
     project_ref: str,
     track_guid: str,
     fx_guid: str,
-    threshold_db: Annotated[float, Field(ge=-42.0, le=0.0)],
+    threshold_db: Annotated[float, Field(ge=-60.0, le=0.0)],
     ratio: Annotated[float, Field(ge=1.0, le=10.0)],
     attack_ms: Annotated[float, Field(ge=0.0, le=200.0)],
     release_ms: Annotated[float, Field(ge=5.0, le=1000.0)],
@@ -1163,6 +1216,46 @@ def configure_reagate(
             "hold_ms": hold_ms,
             "highpass_hz": highpass_hz,
             "lowpass_hz": lowpass_hz,
+            "rms_ms": rms_ms,
+        },
+    )
+
+
+@mcp.tool(
+    title="Configurar de-esser ReaXcomp",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def configure_deesser(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    crossover_hz: Annotated[float, Field(ge=4000.0, le=10000.0)],
+    threshold_db: Annotated[float, Field(ge=-60.0, le=0.0)],
+    ratio: Annotated[float, Field(ge=1.0, le=10.0)],
+    knee_db: Annotated[float, Field(ge=0.0, le=12.0)],
+    attack_ms: Annotated[float, Field(ge=0.0, le=50.0)],
+    release_ms: Annotated[float, Field(ge=5.0, le=500.0)],
+    rms_ms: Annotated[float, Field(ge=0.0, le=50.0)] = 0.0,
+) -> dict[str, Any]:
+    """Configura la banda superior y deja transparentes las tres inferiores."""
+
+    return _call(
+        "configure_deesser",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "crossover_hz": crossover_hz,
+            "threshold_db": threshold_db,
+            "ratio": ratio,
+            "knee_db": knee_db,
+            "attack_ms": attack_ms,
+            "release_ms": release_ms,
             "rms_ms": rms_ms,
         },
     )

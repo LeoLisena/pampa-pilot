@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.14.0"
+local BRIDGE_VERSION = "0.15.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -745,6 +745,18 @@ local function require_reagate(track, fx_index)
   return fx
 end
 
+local function require_reaxcomp(track, fx_index)
+  local fx = read_fx(track, fx_index, false)
+  if not fx.name:lower():find("reaxcomp", 1, true) then
+    error("el FX indicado no es ReaXcomp")
+  end
+  if not fx.enabled or fx.offline then error("ReaXcomp debe estar activo y online") end
+  if fx.parameter_count ~= 51 then
+    error("la estructura observada de ReaXcomp no coincide con el adaptador de cuatro bandas")
+  end
+  return fx
+end
+
 local function require_realimit(track, fx_index)
   local fx = read_fx(track, fx_index, false)
   if not fx.name:lower():find("realimit", 1, true) then
@@ -904,6 +916,58 @@ local function apply_reagate_parameters(track, fx_index, spec, expected_guid)
   set_boolean_parameter(track, fx_index, "18:_Invert_Wet", false)
   local fx = read_fx(track, fx_index, true)
   if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaGate cambió") end
+  return fx
+end
+
+local function validate_deesser_parameters(params)
+  if type(params) ~= "table" then error("parameters de de-esser debe ser un objeto") end
+  return {
+    crossover_hz = require_number(params.crossover_hz, "crossover_hz", 4000.0, 10000.0),
+    threshold_db = require_number(params.threshold_db, "threshold_db", -60.0, 0.0),
+    ratio = require_number(params.ratio, "ratio", 1.0, 10.0),
+    knee_db = require_number(params.knee_db, "knee_db", 0.0, 12.0),
+    attack_ms = require_number(params.attack_ms, "attack_ms", 0.0, 50.0),
+    release_ms = require_number(params.release_ms, "release_ms", 5.0, 500.0),
+    rms_ms = require_number(params.rms_ms, "rms_ms", 0.0, 50.0),
+  }
+end
+
+local function apply_deesser_parameters(track, fx_index, spec, expected_guid)
+  require_reaxcomp(track, fx_index)
+  -- Bands 1-3 remain transparent. Band 3 defines where the de-essing band begins.
+  for band = 1, 3 do
+    local base = (band - 1) * 12
+    set_numeric_parameter(
+      track, fx_index, tostring(base + 1) .. ":_" .. band .. "_Gain", 0.0, 0.11)
+    set_numeric_parameter(
+      track, fx_index, tostring(base + 2) .. ":_" .. band .. "_Threshold", 0.0, 0.11)
+    set_numeric_parameter(
+      track, fx_index, tostring(base + 3) .. ":_" .. band .. "_Ratio", 1.0, 0.011)
+    set_boolean_parameter(
+      track, fx_index, tostring(base + 8) .. ":_" .. band .. "_Make_Up_Gain", false)
+    set_boolean_parameter(
+      track, fx_index, tostring(base + 9) .. ":_" .. band .. "_Auto_Release", false)
+    set_boolean_parameter(
+      track, fx_index, tostring(base + 10) .. ":_" .. band .. "_FeedBack_Detector", false)
+    set_boolean_parameter(
+      track, fx_index, tostring(base + 11) .. ":_" .. band .. "_Active", true)
+  end
+  set_numeric_parameter(
+    track, fx_index, "24:_3_Band_top_frequency", spec.crossover_hz,
+    math.max(1.01, spec.crossover_hz * 0.001))
+  set_numeric_parameter(track, fx_index, "37:_4_Gain", 0.0, 0.11)
+  set_numeric_parameter(track, fx_index, "38:_4_Threshold", spec.threshold_db, 0.11)
+  set_numeric_parameter(track, fx_index, "39:_4_Ratio", spec.ratio, 0.011)
+  set_numeric_parameter(track, fx_index, "40:_4_Knee", spec.knee_db, 0.011)
+  set_numeric_parameter(track, fx_index, "41:_4_Attack", spec.attack_ms, 0.11, "ms")
+  set_numeric_parameter(track, fx_index, "42:_4_Release", spec.release_ms, 1.01, "ms")
+  set_numeric_parameter(track, fx_index, "43:_4_RMS", spec.rms_ms, 0.11, "ms")
+  set_boolean_parameter(track, fx_index, "44:_4_Make_Up_Gain", false)
+  set_boolean_parameter(track, fx_index, "45:_4_Auto_Release", false)
+  set_boolean_parameter(track, fx_index, "46:_4_FeedBack_Detector", false)
+  set_boolean_parameter(track, fx_index, "47:_4_Active", true)
+  local fx = read_fx(track, fx_index, true)
+  if expected_guid and fx.guid ~= expected_guid then error("el GUID de ReaXcomp cambió") end
   return fx
 end
 
@@ -1652,6 +1716,8 @@ function ACTIONS.add_stock_fx(params, request_id)
     plugin_name, expected_name, description = "ReaEQ (Cockos)", "reaeq", "agregar ReaEQ"
   elseif fx_type == "reagate" then
     plugin_name, expected_name, description = "ReaGate (Cockos)", "reagate", "agregar ReaGate"
+  elseif fx_type == "reaxcomp" then
+    plugin_name, expected_name, description = "ReaXcomp (Cockos)", "reaxcomp", "agregar ReaXcomp"
   else
     error("FX nativo no permitido")
   end
@@ -1687,19 +1753,21 @@ function ACTIONS.remove_track_fx(params, request_id)
   local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
   local fx_index = find_fx_by_guid(track, fx_guid)
   local fx = read_fx(track, fx_index, false)
-  if not fx.name:lower():find("reagate", 1, true) then
-    error("sólo se permite quitar ReaGate mediante esta acción")
+  local lower_name = fx.name:lower()
+  if not lower_name:find("reagate", 1, true)
+      and not lower_name:find("reaxcomp", 1, true) then
+    error("sólo se permite quitar ReaGate o ReaXcomp mediante esta acción")
   end
   local before_count = reaper.TrackFX_GetCount(track)
   local result = run_transaction(
-    project, request_id, "quitar ReaGate de pista", function()
+    project, request_id, "quitar FX de dinámica permitido", function()
       reaper.TrackFX_Delete(track, fx_index)
       if reaper.TrackFX_GetCount(track) ~= before_count - 1 then
         error("la cantidad de FX de la pista no disminuyó exactamente en uno")
       end
       for observed_index = 0, reaper.TrackFX_GetCount(track) - 1 do
         if reaper.TrackFX_GetFXGUID(track, observed_index) == fx_guid then
-          error("ReaGate continúa presente después de quitarlo")
+          error("el FX continúa presente después de quitarlo")
         end
       end
       return {
@@ -1991,6 +2059,84 @@ function ACTIONS.apply_reagate_proposal(params, request_id)
         error("la cantidad de FX no coincide al aplicar ReaGate")
       end
       local fx = apply_reagate_parameters(track, fx_index, spec, requested_guid)
+      local track_state = read_track(track, track_index)
+      if track_state.fx_count ~= expected_count then
+        error("la lectura posterior de la pista no coincide")
+      end
+      return {
+        project_ref = ref,
+        proposal_id = proposal_id,
+        source_sha256 = source_sha256,
+        mode = mode,
+        track = track_state,
+        fx = fx,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
+end
+
+function ACTIONS.configure_deesser(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_index = find_fx_by_guid(track, params.fx_guid)
+  require_reaxcomp(track, fx_index)
+  local spec = validate_deesser_parameters(params)
+
+  local result = run_transaction(project, request_id, "configurar de-esser ReaXcomp", function()
+    local fx = apply_deesser_parameters(track, fx_index, spec, params.fx_guid)
+    return {
+      project_ref = ref,
+      fx = fx,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.apply_deesser_proposal(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, track_index = find_track_by_guid(project, params.track_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-f]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal minúsculo")
+  end
+  local mode = require_string(params.mode, "mode", 32)
+  if mode ~= "reuse_existing" and mode ~= "create_new" then
+    error("modo de de-esser no permitido")
+  end
+  local spec = validate_deesser_parameters(params.parameters)
+  local requested_guid = nil
+  if mode == "reuse_existing" then
+    requested_guid = require_string(params.fx_guid, "fx_guid", 64)
+    require_reaxcomp(track, find_fx_by_guid(track, requested_guid))
+  else
+    if params.fx_guid ~= nil then error("create_new no admite fx_guid") end
+    if count_fx_by_name_fragment(track, "reaxcomp") > 0 then
+      error("la pista ya contiene ReaXcomp; vincule su GUID para evitar duplicados")
+    end
+  end
+
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar propuesta de-esser " .. proposal_id, function()
+      local fx_index
+      if mode == "reuse_existing" then
+        fx_index = find_fx_by_guid(track, requested_guid)
+      else
+        fx_index = reaper.TrackFX_AddByName(track, "ReaXcomp (Cockos)", false, -1)
+        if fx_index < 0 then error("REAPER no pudo agregar ReaXcomp") end
+      end
+      local expected_count = before_count + (mode == "create_new" and 1 or 0)
+      if reaper.TrackFX_GetCount(track) ~= expected_count then
+        error("la cantidad de FX no coincide al aplicar el de-esser")
+      end
+      local fx = apply_deesser_parameters(track, fx_index, spec, requested_guid)
       local track_state = read_track(track, track_index)
       if track_state.fx_count ~= expected_count then
         error("la lectura posterior de la pista no coincide")

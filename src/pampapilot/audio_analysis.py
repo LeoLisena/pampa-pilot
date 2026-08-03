@@ -97,6 +97,10 @@ def _spectral_metrics(data: Any, sample_rate: int) -> dict[str, Any]:
             "spectral_centroid_hz": None,
             "spectral_flatness": None,
             "sibilance_ratio_p95": None,
+            "sibilance_band_rms_dbfs_p50": None,
+            "sibilance_band_rms_dbfs_p90": None,
+            "sibilance_band_rms_dbfs_p95": None,
+            "sibilance_peak_to_median_db": None,
             "low_frequency_ratio_below_100_hz_p95": None,
         }
     fft_size = min(4096, 2 ** int(math.floor(math.log2(len(mono)))))
@@ -106,6 +110,7 @@ def _spectral_metrics(data: Any, sample_rate: int) -> dict[str, Any]:
     frequencies = np.fft.rfftfreq(fft_size, 1.0 / sample_rate)
     accumulated = np.zeros(len(frequencies), dtype=np.float64)
     sibilance_ratios: list[float] = []
+    sibilance_levels_dbfs: list[float] = []
     low_ratios: list[float] = []
     audible_mask = (frequencies >= 20.0) & (frequencies < min(20_000.0, sample_rate / 2.0))
     speech_mask = (frequencies >= 1_000.0) & (frequencies < min(10_000.0, sample_rate / 2.0))
@@ -125,6 +130,22 @@ def _spectral_metrics(data: Any, sample_rate: int) -> dict[str, Any]:
         sibilance_ratios.extend(
             (sibilance_power[valid_speech] / speech_power[valid_speech]).tolist()
         )
+        # Parseval-corrected band RMS. Silence is excluded so a long empty tail
+        # cannot manufacture apparent sibilance dynamics.
+        one_sided_weights = np.ones(power.shape[1], dtype=np.float64)
+        if one_sided_weights.size > 2:
+            one_sided_weights[1:-1] = 2.0
+        window_denominator = fft_size * float(np.sum(window * window))
+        audible_mean_square = np.sum(
+            power[:, audible_mask] * one_sided_weights[audible_mask], axis=1
+        ) / window_denominator
+        sibilance_mean_square = np.sum(
+            power[:, sibilance_mask] * one_sided_weights[sibilance_mask], axis=1
+        ) / window_denominator
+        active_frames = audible_mean_square >= 10.0 ** (-60.0 / 10.0)
+        if np.any(active_frames):
+            band_rms = np.sqrt(np.maximum(sibilance_mean_square[active_frames], 1e-24))
+            sibilance_levels_dbfs.extend((20.0 * np.log10(band_rms)).tolist())
 
     total = float(np.sum(accumulated[audible_mask]))
     ratios: dict[str, float] = {}
@@ -146,12 +167,26 @@ def _spectral_metrics(data: Any, sample_rate: int) -> dict[str, Any]:
         if positive_power.size
         else None
     )
+    sibilance_percentiles = (
+        [float(value) for value in np.percentile(sibilance_levels_dbfs, [50, 90, 95])]
+        if sibilance_levels_dbfs
+        else [None, None, None]
+    )
+    sibilance_p50, sibilance_p90, sibilance_p95 = sibilance_percentiles
     return {
         "spectral_band_energy_ratio": ratios,
         "spectral_centroid_hz": centroid,
         "spectral_flatness": flatness,
         "sibilance_ratio_p95": (
             float(np.percentile(sibilance_ratios, 95)) if sibilance_ratios else None
+        ),
+        "sibilance_band_rms_dbfs_p50": sibilance_p50,
+        "sibilance_band_rms_dbfs_p90": sibilance_p90,
+        "sibilance_band_rms_dbfs_p95": sibilance_p95,
+        "sibilance_peak_to_median_db": (
+            sibilance_p95 - sibilance_p50
+            if sibilance_p95 is not None and sibilance_p50 is not None
+            else None
         ),
         "low_frequency_ratio_below_100_hz_p95": (
             float(np.percentile(low_ratios, 95)) if low_ratios else None

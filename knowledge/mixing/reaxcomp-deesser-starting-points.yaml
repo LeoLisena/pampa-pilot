@@ -1,0 +1,39 @@
+id: mixing.reaxcomp.supervised-deesser
+title: Punto de partida supervisado para de-essing con ReaXcomp
+stage: vocal_cleanup
+purpose: Atenuar picos sibilantes sin comprimir el resto del espectro vocal.
+principles:
+  - No aplicar de-essing por rutina a stems generados por Suno.
+  - La energía entre 5 y 10 kHz es evidencia y no demuestra por sí sola un defecto.
+  - Comprimir sólo la banda superior; las tres bandas inferiores deben pasar sin compresión.
+  - Confirmar a oído que consonantes, brillo y aire siguen naturales.
+profiles:
+  organic_lead_vocal:
+    intent: Controlar eses y consonantes incisivas conservando claridad y aire.
+    minimum_sibilance_ratio_p95: 0.50
+    minimum_sibilance_peak_to_median_db: 6.0
+    minimum_sibilance_band_p95_dbfs: -45.0
+    threshold_below_p95_db: 8.0
+    threshold_above_median_db: 6.0
+    starting_values:
+      crossover_hz: 5200.0
+      threshold_db: -28.0
+      ratio: 3.0
+      knee_db: 3.0
+      attack_ms: 1.0
+      release_ms: 80.0
+      rms_ms: 0.0
+    fine_tuning:
+      - Subir threshold o bajar ratio si la voz pierde brillo o suena ceceante.
+      - Ajustar crossover entre 4.5 y 7.5 kHz según cantante y micrófono.
+      - Alargar release si aparece modulación áspera; acortarlo si se apaga demasiado el aire.
+confidence: conservative_working_defaults
+reviewed_at: 2026-08-03
+sources:
+  - title: REAPER ReaEffects Guide - ReaXcomp
+    url: https://www.reaper.fm/guides/ReaEffectsGuide.pdf
+    kind: official_documentation
+  - title: ReaXcomp parameter identities observed from REAPER 7.78
+    kind: local_live_validation
+  - title: Flujo Suno y voces orgánicas indicado por el usuario
+    kind: user_requirement

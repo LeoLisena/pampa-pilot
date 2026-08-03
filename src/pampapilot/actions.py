@@ -160,7 +160,7 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "remove_track_fx",
             True,
             VerificationLevel.STATE,
-            "Quita una instancia ReaGate exacta de una pista mediante GUID.",
+            "Quita una instancia ReaGate o ReaXcomp exacta mediante GUID.",
         ),
         ActionSpec(
             "add_master_stock_fx",
@@ -215,6 +215,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             True,
             VerificationLevel.STATE,
             "Aplica una propuesta ReaGate aprobada y vigente, creando o reutilizando por GUID.",
+        ),
+        ActionSpec(
+            "configure_deesser",
+            True,
+            VerificationLevel.STATE,
+            "Configura ReaXcomp como de-esser de cuatro bandas y verifica sus parámetros.",
+        ),
+        ActionSpec(
+            "apply_deesser_proposal",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una propuesta de-esser aprobada y vigente mediante GUID.",
         ),
         ActionSpec(
             "configure_reaeq_band",

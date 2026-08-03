@@ -7,7 +7,7 @@ from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 class ActionCatalogTests(unittest.TestCase):
     def test_first_mvp_has_small_explicit_allowlist(self) -> None:
-        self.assertEqual(len(ACTION_SPECS), 34)
+        self.assertEqual(len(ACTION_SPECS), 36)
         self.assertFalse(require_action("health_check").mutates_project)
         self.assertFalse(require_action("discover_project_fx").mutates_project)
         self.assertFalse(require_action("discover_installed_fx").mutates_project)
@@ -30,6 +30,8 @@ class ActionCatalogTests(unittest.TestCase):
         self.assertTrue(require_action("configure_reaeq_band").mutates_project)
         self.assertTrue(require_action("configure_reagate").mutates_project)
         self.assertTrue(require_action("apply_reagate_proposal").mutates_project)
+        self.assertTrue(require_action("configure_deesser").mutates_project)
+        self.assertTrue(require_action("apply_deesser_proposal").mutates_project)
         self.assertEqual(
             require_action("set_track_pan").minimum_verification,
             VerificationLevel.STATE,

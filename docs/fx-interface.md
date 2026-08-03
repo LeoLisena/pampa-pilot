@@ -12,7 +12,7 @@ Toda mutación requiere:
 - `track_guid`: identidad estable de la pista;
 - `fx_guid`: identidad estable de la instancia del efecto.
 
-`add_stock_fx` permite actualmente `reacomp`, `reaeq` y `reagate`. Cada alta comprueba que
+`add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate` y `reaxcomp`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -74,6 +74,30 @@ de una prueba sólo acepta el GUID exacto de ReaGate y verifica que desapareció
 La prueba offline del stem `3 Guitar.wav` de Suno observó 30,04 % de bloques
 quiet, −40,90 dBFS en esos pasajes y 16,55 dB de separación. Aun así devolvió
 `not_recommended`, porque el origen procesado no justifica una puerta por rutina.
+
+## De-esser con ReaXcomp
+
+`preview_deesser_proposal` mide la energía de 5 a 10 kHz por ventanas, su nivel
+RMS y cuánto sobresalen los picos respecto de la mediana. Esa observación no se
+etiqueta automáticamente como un defecto: brillo constante y sibilancia
+intermitente producen decisiones distintas.
+
+Para una voz orgánica con evidencia suficiente, el motor propone ReaXcomp en
+modo `audition_only`. Las bandas 1 a 3 se configuran con ratio 1:1, ganancia 0 dB
+y auto makeup desactivado; la banda 4 comienza en el crossover propuesto y es la
+única que comprime. `configure_deesser` y `apply_deesser_proposal` releen los 51
+parámetros y vinculan la instancia por GUID.
+
+La voz de Suno `10 Vocals.wav` produjo ratio sibilante p95 0,598, banda p95
+−28,68 dBFS y 8,67 dB de diferencia pico-mediana. El resultado fue igualmente
+`not_recommended` por su origen ya procesado.
+
+La integración se validó en vivo con el puente 0.15.0 sobre `Vocals`. REAPER
+confirmó ratio 1:1, threshold 0 dB y auto makeup desactivado en las bandas 1 a
+3; en la banda 4 confirmó crossover 5200 Hz, threshold −28 dB, ratio 3:1, knee
+3 dB, attack 1 ms, release 79 ms (cuantización interna del pedido de 80 ms), RMS
+0 ms y estado activo. La instancia temporal se retiró por GUID y la pista volvió
+a sus dos FX originales.
 
 ## Prueba real 0.5.1
 

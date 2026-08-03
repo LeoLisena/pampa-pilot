@@ -46,13 +46,13 @@ nucleo debe seguir funcionando en una instalación limpia de REAPER.
 
 ## Próximas extensiones
 
-1. adaptador musical de ReaGate con umbral, ataque, retención, liberación e
-   histéresis expresados en unidades comprensibles;
-2. buses verificados de ReaVerb/ReaDelay con envíos por GUID;
-3. de-esser controlado mediante ReaXcomp o JSFX disponible;
-4. captura corta antes/después con el mismo rango para verificar cambios de
+1. buses verificados de ReaVerb/ReaDelay con envíos por GUID;
+2. captura corta antes/después con el mismo rango para verificar cambios de
    señal sin confundirlos con calidad perceptual;
-5. automatización de parámetros como capacidad separada y explícita.
+3. automatización de parámetros como capacidad separada y explícita.
+
+ReaGate quedó implementado en 0.14.0 y el de-esser ReaXcomp en 0.15.0, ambos
+con propuesta source-aware, aprobación por ID, mutación por GUID y relectura.
 
 ## Validación real de 0.13.0
 
@@ -64,6 +64,14 @@ ReaComp y ReaEQ en voz, y dos ReaSynth en pistas MIDI. La consulta detallada de
 ReaComp devolvió su GUID estable y los 24 parámetros, entre ellos threshold
 -10.0 dB, ratio 1.5:1, attack 15 ms y release 120 ms. Las tres respuestas fueron
 de sólo lectura y REAPER marcó `state_verified: true`.
+
+## Validación real de 0.15.0
+
+ReaXcomp expuso 51 parámetros distribuidos en cuatro bandas. En `Vocals`, el
+adaptador dejó las bandas 1 a 3 en 1:1 y configuró sólo la banda 4 desde 5200 Hz,
+threshold -28 dB, ratio 3:1, knee 3 dB, attack 1 ms y release observado 79 ms.
+La relectura devolvió `state_verified: true`; la instancia temporal se eliminó
+por GUID y la pista regresó a sus dos FX originales.
 
 ## Fuentes
 
