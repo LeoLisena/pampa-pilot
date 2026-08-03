@@ -38,6 +38,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "undo_transaction",
                 "discover_song_media",
                 "analyze_midi",
+                "preview_master_delivery_qc",
                 "propose_track_processing",
                 "apply_processing_proposal",
                 "diagnose_song",
@@ -82,6 +83,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["undo_transaction"].annotations.destructive_hint)
         self.assertTrue(tools["discover_song_media"].annotations.read_only_hint)
         self.assertTrue(tools["analyze_midi"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_master_delivery_qc"].annotations.read_only_hint)
         self.assertTrue(tools["propose_track_processing"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.read_only_hint)
         self.assertFalse(tools["apply_processing_proposal"].annotations.idempotent_hint)

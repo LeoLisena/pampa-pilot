@@ -57,6 +57,8 @@ La materialización MIDI verificable está en
 [docs/midi-import.md](docs/midi-import.md).
 La estrategia híbrida de procesamiento por stem está en
 [docs/song-processing-strategy.md](docs/song-processing-strategy.md).
+El control offline del master para distribución está en
+[docs/master-delivery-qc.md](docs/master-delivery-qc.md).
 Las propuestas auditables de procesamiento están en
 [docs/processing-proposals.md](docs/processing-proposals.md).
 El diagnóstico híbrido de stems está en

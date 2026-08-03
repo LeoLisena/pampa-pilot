@@ -452,6 +452,7 @@ analysis = [
     { name = "numpy" },
     { name = "pyloudnorm" },
     { name = "pyyaml" },
+    { name = "scipy" },
     { name = "soundfile" },
 ]
 dev = [
@@ -467,6 +468,7 @@ requires-dist = [
     { name = "pyloudnorm", marker = "extra == 'analysis'", specifier = ">=0.1.1,<1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
     { name = "pyyaml", marker = "extra == 'analysis'", specifier = ">=6,<7" },
+    { name = "scipy", marker = "extra == 'analysis'", specifier = ">=1.15,<2" },
     { name = "soundfile", marker = "extra == 'analysis'", specifier = ">=0.13,<1" },
 ]
 provides-extras = ["analysis", "dev"]

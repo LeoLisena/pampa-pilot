@@ -1,0 +1,30 @@
+id: mastering.delivery.spotify-streaming
+title: Control técnico informativo para reproducción en Spotify
+stage: mastering
+purpose: Previsualizar normalización y riesgos técnicos sin imponer una decisión estética de loudness.
+profile:
+  normalization_lufs: -14.0
+  quiet_normalization_lufs: -19.0
+  loud_normalization_lufs: -11.0
+  true_peak_max_dbtp_at_or_below_normalization: -1.0
+  true_peak_max_dbtp_above_normalization: -2.0
+  preferred_channels: 2
+  minimum_sample_rate_hz: 44100
+principles:
+  - La normalización se aplica durante la reproducción; no modifica el master entregado.
+  - Un objetivo de LUFS no reemplaza decisiones artísticas ni garantiza calidad profesional.
+  - Spotify solicita un único master estéreo de alta calidad por pista.
+  - El true peak local es una estimación por sobremuestreo y no una certificación del codificador.
+verification:
+  - Medir LUFS integrados sobre el archivo completo.
+  - Revisar sample peak, true peak estimado, clipping y formato.
+  - Simular la compensación de ganancia normal con el headroom recomendado.
+sources:
+  - title: Loudness normalization on Spotify
+    url: https://support.spotify.com/artists/article/loudness-normalization/
+    kind: official_platform_documentation
+  - title: Lossless audio delivery on Spotify
+    url: https://support.spotify.com/artists/article/lossless-audio/
+    kind: official_platform_documentation
+confidence: official_platform_guidance_with_estimated_local_true_peak
+reviewed_at: 2026-08-02

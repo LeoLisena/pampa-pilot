@@ -14,6 +14,7 @@ from .media_discovery import (
     resolve_input_file,
     resolve_output_directory,
 )
+from .mastering_qc import build_master_delivery_qc
 from .midi_cleanup import (
     CleanupConfig,
     analyze_midi_file,
@@ -143,6 +144,20 @@ def analyze_midi(
 
     path = resolve_input_file(midi_path, suffixes={".mid", ".midi"})
     return analyze_midi_file(path)
+
+
+@mcp.tool(
+    title="Previsualizar control técnico de master",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_master_delivery_qc(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    profile: Literal["spotify_streaming"] = "spotify_streaming",
+) -> dict[str, Any]:
+    """Mide el archivo final y simula normalización; no modifica audio ni REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav", ".flac"})
+    return build_master_delivery_qc(audio_path, profile_name=profile)
 
 
 @mcp.tool(
