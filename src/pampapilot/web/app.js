@@ -134,6 +134,7 @@ async function loadProjects(preferredName = '') {
     $('#timeline').innerHTML = '<div class="empty-state">La estructura aparecerá aquí.</div>';
     $('#stem-list').innerHTML = '<div class="empty-state">Cargá stems desde “Nueva canción”.</div>';
   }
+  return selected || null;
 }
 
 function addMessage(role, content, pending = false) {
@@ -577,7 +578,20 @@ $('#settings-form').addEventListener('submit', async event => {
     resultElement.textContent = result.status.connected ? 'Conexión correcta.' : `Configuración guardada: ${result.status.error}`;
     await refreshStatus();
     if (result.status.connected) window.setTimeout(() => settingsDialog.close(), 700);
-  } catch (error) { resultElement.textContent = error.message; }
+  } catch (error) {
+    if (error.message === 'La canción ya existe') {
+      const title = String(new FormData(form).get('title') || '').trim();
+      const selected = await loadProjects(title);
+      if (selected?.name === title) {
+        form.reset();
+        resultElement.textContent = 'La canción ya existía: se abrió sin sobrescribir archivos.';
+        toast(`Proyecto existente abierto: ${title}`);
+        window.setTimeout(() => newSongDialog.close(), 850);
+        return;
+      }
+    }
+    resultElement.textContent = error.message;
+  }
 });
 
 const newSongDialog = $('#new-song-dialog');
