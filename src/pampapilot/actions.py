@@ -103,6 +103,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Lee la envolvente de volumen existente sin crearla ni modificarla.",
         ),
         ActionSpec(
+            "apply_vocal_rider_envelope",
+            True,
+            VerificationLevel.STATE,
+            "Inserta una propuesta vocal por frases en una envolvente vacía y relee cada punto.",
+        ),
+        ActionSpec(
             "configure_item_fades",
             True,
             VerificationLevel.STATE,

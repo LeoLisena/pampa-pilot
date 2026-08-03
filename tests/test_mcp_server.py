@@ -21,11 +21,13 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "discover_installed_fx",
                 "discover_fx_parameter_domain",
                 "preview_saturation_proposal",
+                "preview_vocal_rider_proposal",
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
                 "get_track_items",
                 "inspect_track_volume_envelope",
+                "apply_vocal_rider_envelope",
                 "configure_item_fades",
                 "create_track",
                 "set_track_pan",
@@ -89,12 +91,15 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["discover_installed_fx"].annotations.read_only_hint)
         self.assertTrue(tools["discover_fx_parameter_domain"].annotations.read_only_hint)
         self.assertTrue(tools["preview_saturation_proposal"].annotations.read_only_hint)
+        self.assertTrue(tools["preview_vocal_rider_proposal"].annotations.read_only_hint)
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.destructive_hint)
         self.assertTrue(tools["get_track_items"].annotations.read_only_hint)
         self.assertTrue(tools["inspect_track_volume_envelope"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.read_only_hint)
+        self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.destructive_hint)
         self.assertTrue(tools["configure_item_fades"].annotations.idempotent_hint)
         self.assertFalse(tools["configure_item_fades"].annotations.destructive_hint)
         self.assertTrue(tools["set_track_pan"].annotations.idempotent_hint)

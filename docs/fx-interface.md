@@ -193,9 +193,42 @@ formas y curvaturas, y relee todos los campos. La operación es idempotente y
 queda dentro de una transacción undo.
 
 `inspect_track_volume_envelope` sólo consulta la envolvente `<VOLENV>` si ya
-existe. Esta primera etapa no crea ni sobrescribe automatización: la prueba en
-REAPER determinará si las pistas actuales ofrecen una envolvente utilizable sin
-recurrir a manipulación de chunks.
+existe; nunca la crea ni modifica. La escritura se mantiene como una acción
+separada y explícita.
+
+## Vocal rider por regiones
+
+El puente 0.21.0 incorpora `apply_vocal_rider_envelope`. La propuesta offline
+analiza bloques de 50 ms, calcula un umbral de actividad relativo al p90 y usa
+la mediana RMS de las regiones como referencia interna. Para voz orgánica mueve
+cada región sólo un 60 % hacia esa mediana, con un máximo de ±3 dB y rampas de
+80/120 ms. No busca un nivel absoluto ni altera el WAV.
+
+La aplicación exige `proposal_id`, SHA-256, ruta del WAV permitido, GUID de
+pista e ítem, `source_kind=organic_multitrack` y puntos estrictamente ordenados. Verifica que la toma activa use
+ese mismo archivo, transforma tiempos de fuente considerando offset y playrate,
+y rechaza cualquier punto fuera del tramo reproducido. Nunca sobrescribe una
+envolvente que ya tenga puntos dentro del ítem. Si debe crearla, usa la acción
+nativa de REAPER y restaura la selección de pistas. Finalmente relee tiempo,
+ganancia, forma y tensión de cada punto; toda la operación es deshacible.
+
+Para `suno_stems`, el resultado es `not_recommended` y no contiene puntos: la
+voz ya procesada puede conservar señal residual que una segmentación simple
+confundiría con frase. Para fuente desconocida exige clasificar primero.
+
+La prueba offline de `10 Vocals.wav` observó umbral adaptativo -39,37 dBFS y 12
+regiones, pero generó cero puntos por ser Suno. REAPER confirmó además que la
+pista `Vocals` tiene un único ítem de 234,875 s y una envolvente presente sin
+puntos; esas consultas fueron de sólo lectura.
+
+La escritura se validó en vivo con el puente 0.21.0 sobre una pista temporal de
+3 s y un WAV sintético que simulaba tres frases orgánicas a niveles distintos.
+El analizador propuso ocho puntos para dos correcciones limitadas a +3 y -3 dB.
+REAPER releyó exactamente los ocho tiempos, ganancias, formas y tensiones desde
+la envolvente. Después se deshicieron, en orden, la automatización y la
+importación: el proyecto volvió a 14 pistas y 85 BPM. El WAV y su carpeta
+temporal se eliminaron; ningún stem real fue modificado. Esta prueba verifica
+estado, no sonido ni calidad perceptual sobre una voz humana.
 
 ## Prueba real 0.5.1
 

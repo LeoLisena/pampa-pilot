@@ -101,9 +101,16 @@ Referencias de diseño para carga genérica de presets:
 
 ## Mezcla y edición pendientes
 
-- [ ] Escritura segura de envolventes de volumen y paneo; la inspección ya está.
+- [x] Escritura segura de envolvente de volumen por GUID, ligada a WAV/ítem,
+      sin sobrescribir puntos existentes y con lectura posterior completa.
+- [ ] Escritura segura de envolvente de paneo.
 - [ ] Validación real de fades automáticos por GUID; el adaptador ya está.
-- [ ] Automatización de volumen vocal por frases antes de comprimir en exceso.
+- [x] Propuesta de volumen vocal por regiones para tomas orgánicas antes de
+      comprimir; Suno devuelve `not_recommended` y origen desconocido se bloquea.
+- [x] Validar la escritura en vivo y deshacerla sobre una toma sintética de
+      prueba; ocho puntos fueron releídos exactamente y el proyecto volvió a
+      sus 14 pistas.
+- [ ] Escuchar una voz orgánica real y ajustar segmentación, rampas y límites.
 - [ ] Sidechain verificable para ducking de bajo/bombo y voz/instrumentación.
 - [ ] Procesamiento paralelo con buses y compensación de nivel.
 - [ ] Alineación temporal y de fase entre micrófonos o tomas relacionadas.

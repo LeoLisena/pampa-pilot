@@ -65,6 +65,9 @@ se habilita todavía: el modo Subtract y el perfil son estado privado del plugin
 El puente 0.20.0 incorpora saturación mediante `JS: Multi Waveshaper`: controla
 Drive, Muffle y Output, fija estéreo y sobremuestreo x2, desactiva el limitador
 interno y diferencia puntos de partida para Suno, fuentes orgánicas y desconocidas.
+El puente 0.21.0 agrega vocal riding por regiones para voces orgánicas: liga la
+propuesta al WAV y al ítem exactos, escribe sólo sobre una envolvente libre y
+relee cada punto. Los stems vocales de Suno se analizan pero no se automatizan.
 
 ## Decisiones iniciales
 

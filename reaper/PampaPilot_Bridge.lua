@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.20.0"
+local BRIDGE_VERSION = "0.21.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -1818,6 +1818,181 @@ function ACTIONS.inspect_track_volume_envelope(params, _)
     scaling_mode = scaling_mode,
     points = points,
   }, observations(true)
+end
+
+local function ensure_track_volume_envelope(project, track)
+  local envelope = reaper.GetTrackEnvelopeByChunkName(track, "<VOLENV")
+  if envelope then return envelope, false end
+
+  local selected_tracks = {}
+  for selected_index = 0, reaper.CountSelectedTracks(project) - 1 do
+    selected_tracks[#selected_tracks + 1] = reaper.GetSelectedTrack(
+      project, selected_index)
+  end
+  for track_index = 0, reaper.CountTracks(project) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(project, track_index), false)
+  end
+  reaper.SetTrackSelected(track, true)
+  -- Acción nativa estable: Track: Toggle track volume envelope visible.
+  reaper.Main_OnCommand(40406, 0)
+  envelope = reaper.GetTrackEnvelopeByChunkName(track, "<VOLENV")
+  for track_index = 0, reaper.CountTracks(project) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(project, track_index), false)
+  end
+  for _, selected_track in ipairs(selected_tracks) do
+    if selected_track then reaper.SetTrackSelected(selected_track, true) end
+  end
+  if not envelope then error("REAPER no creó la envolvente de volumen") end
+  return envelope, true
+end
+
+local function validate_vocal_rider_points(points)
+  if type(points) ~= "table" or #points < 1 or #points > 512 then
+    error("points debe contener entre 1 y 512 puntos")
+  end
+  local validated, previous_time = {}, nil
+  for index, point in ipairs(points) do
+    if type(point) ~= "table" then error("cada punto debe ser un objeto") end
+    local source_time = require_number(
+      point.source_time_seconds, "source_time_seconds", 0.0, 86400.0)
+    if previous_time ~= nil and source_time <= previous_time then
+      error("los puntos deben estar estrictamente ordenados y sin duplicados")
+    end
+    local shape = require_integer(point.shape, "shape", 0, 0)
+    local tension = require_number(point.tension, "tension", 0.0, 0.0)
+    validated[index] = {
+      source_time_seconds = source_time,
+      gain_db = require_number(point.gain_db, "gain_db", -6.0, 6.0),
+      shape = shape,
+      tension = tension,
+    }
+    previous_time = source_time
+  end
+  return validated
+end
+
+function ACTIONS.apply_vocal_rider_envelope(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local item, item_index = find_track_item_by_guid(track, params.item_guid)
+  local proposal_id = require_string(params.proposal_id, "proposal_id", 24)
+  if #proposal_id ~= 24 or not proposal_id:match("^[0-9a-f]+$") then
+    error("proposal_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-f]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal minúsculo")
+  end
+  local source_kind = require_string(params.source_kind, "source_kind", 32)
+  if source_kind ~= "organic_multitrack" then
+    error("el vocal rider sólo permite fuentes orgánicas confirmadas")
+  end
+  local source_path = require_allowed_audio_path(params.source_file_path)
+  local points = validate_vocal_rider_points(params.points)
+  local take = reaper.GetActiveTake(item)
+  if not take or reaper.TakeIsMIDI(take) then
+    error("el ítem indicado no contiene una toma de audio activa")
+  end
+  local source = reaper.GetMediaItemTake_Source(take)
+  if not source then error("la toma activa no tiene fuente") end
+  local observed_source_path = reaper.GetMediaSourceFileName(source)
+  if normalized_absolute_path(observed_source_path, "observed_source_path")
+      ~= normalized_absolute_path(source_path, "source_file_path") then
+    error("la fuente del ítem no coincide con el WAV analizado")
+  end
+  local item_position = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+  local item_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+  local take_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+  local playrate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+  if playrate <= 0 then error("la velocidad de la toma no es válida") end
+  local source_end = take_offset + item_length * playrate
+  local mapped = {}
+  for index, point in ipairs(points) do
+    if point.source_time_seconds < take_offset - 0.000001
+        or point.source_time_seconds > source_end + 0.000001 then
+      error("un punto queda fuera del tramo reproducido por el ítem")
+    end
+    mapped[index] = {
+      source_time_seconds = point.source_time_seconds,
+      project_time_seconds = item_position
+        + (point.source_time_seconds - take_offset) / playrate,
+      gain_db = point.gain_db,
+      shape = point.shape,
+      tension = point.tension,
+    }
+  end
+
+  local result = run_transaction(
+    project, request_id, "aplicar vocal rider " .. proposal_id, function()
+      local envelope, envelope_created = ensure_track_volume_envelope(
+        project, track)
+      for point_index = 0, reaper.CountEnvelopePoints(envelope) - 1 do
+        local ok, time = reaper.GetEnvelopePoint(envelope, point_index)
+        if not ok then error("REAPER no pudo leer la envolvente existente") end
+        if time >= item_position - 0.000001
+            and time <= item_position + item_length + 0.000001 then
+          error("el ítem ya contiene automatización de volumen; no se sobrescribe")
+        end
+      end
+      local scaling_mode = reaper.GetEnvelopeScalingMode(envelope)
+      for _, point in ipairs(mapped) do
+        local value = reaper.ScaleToEnvelopeMode(
+          scaling_mode, db_to_amplitude(point.gain_db))
+        if not reaper.InsertEnvelopePointEx(
+            envelope, -1, point.project_time_seconds, value,
+            point.shape, point.tension, false, true) then
+          error("REAPER rechazó un punto del vocal rider")
+        end
+      end
+      reaper.Envelope_SortPointsEx(envelope, -1)
+
+      local observed = {}
+      for point_index = 0, reaper.CountEnvelopePoints(envelope) - 1 do
+        local ok, time, value, shape, tension, selected = reaper.GetEnvelopePoint(
+          envelope, point_index)
+        if not ok then error("REAPER no pudo releer un punto del vocal rider") end
+        if time >= item_position - 0.000001
+            and time <= item_position + item_length + 0.000001 then
+          observed[#observed + 1] = {
+            project_time_seconds = time,
+            gain_db = amplitude_to_db(
+              reaper.ScaleFromEnvelopeMode(scaling_mode, value)),
+            shape = shape,
+            tension = tension,
+            selected = selected,
+          }
+        end
+      end
+      if #observed ~= #mapped then
+        error("la cantidad de puntos releída no coincide")
+      end
+      for index, expected in ipairs(mapped) do
+        local actual = observed[index]
+        if math.abs(actual.project_time_seconds - expected.project_time_seconds)
+              > 0.000001
+            or math.abs(actual.gain_db - expected.gain_db) > 0.011
+            or actual.shape ~= expected.shape
+            or math.abs(actual.tension - expected.tension) > 0.000001 then
+          error("la lectura posterior del vocal rider no coincide")
+        end
+        actual.source_time_seconds = expected.source_time_seconds
+      end
+      return {
+        project_ref = ref,
+        track_guid = params.track_guid,
+        item = read_item_fades(item, item_index),
+        proposal_id = proposal_id,
+        source_file_path = source_path,
+        source_sha256 = source_sha256,
+        source_kind = source_kind,
+        envelope_created = envelope_created,
+        scaling_mode = scaling_mode,
+        points = observed,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
 end
 
 function ACTIONS.configure_item_fades(params, request_id)

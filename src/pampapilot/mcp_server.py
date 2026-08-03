@@ -59,6 +59,7 @@ from .song_preparation import (
 from .song_diagnosis import diagnose_song as build_song_diagnosis
 from .song_processing_strategy import build_song_processing_strategy
 from .saturation_proposal import propose_saturation as build_saturation_proposal
+from .vocal_rider import build_vocal_rider_proposal
 
 
 mcp = MCPServer(
@@ -137,6 +138,13 @@ class WaveshaperParameters(BaseModel):
     drive_percent: Annotated[float, Field(ge=0.0, le=35.0)]
     muffle_percent: Annotated[float, Field(ge=0.0, le=30.0)] = 0.0
     output_gain_db: Annotated[float, Field(ge=-12.0, le=0.0)]
+
+
+class VocalRiderPoint(BaseModel):
+    source_time_seconds: Annotated[float, Field(ge=0.0, le=86_400.0)]
+    gain_db: Annotated[float, Field(ge=-6.0, le=6.0)]
+    shape: Literal[0] = 0
+    tension: Literal[0.0] = 0.0
 
 
 class StemSourceOverride(BaseModel):
@@ -218,6 +226,20 @@ def preview_saturation_proposal(
     """Propone un punto de partida de audición; no analiza ni modifica audio."""
 
     return build_saturation_proposal(source_kind)
+
+
+@mcp.tool(
+    title="Previsualizar vocal rider por frases",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_vocal_rider_proposal(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+) -> dict[str, Any]:
+    """Analiza un WAV vocal y propone rampas; no modifica audio ni REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_vocal_rider_proposal(audio_path, source_kind)
 
 
 @mcp.tool(
@@ -1025,6 +1047,42 @@ def inspect_track_volume_envelope(
     return _call(
         "inspect_track_volume_envelope",
         {"project_ref": project_ref, "track_guid": track_guid},
+    )
+
+
+@mcp.tool(
+    title="Aplicar vocal rider verificable",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_vocal_rider_envelope(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    item_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    source_file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    source_kind: Literal["organic_multitrack"],
+    points: Annotated[list[VocalRiderPoint], Field(min_length=1, max_length=512)],
+) -> dict[str, Any]:
+    """Crea una envolvente vacía y escribe puntos ligados al WAV y al ítem exactos."""
+
+    return _call(
+        "apply_vocal_rider_envelope",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "item_guid": item_guid,
+            "proposal_id": proposal_id,
+            "source_file_path": source_file_path,
+            "source_sha256": source_sha256,
+            "source_kind": source_kind,
+            "points": [point.model_dump() for point in points],
+        },
     )
 
 
