@@ -19,11 +19,19 @@ from .song_preparation import classify_stem
 SYSTEM_PROMPT_PATH = WORKSPACE_ROOT / "knowledge" / "agent" / "system-prompt.md"
 SECTION_RE = re.compile(r"^\s*\[([^\]]+)]\s*$")
 DEEP_CONTEXT_TERMS = {
-    "analiza", "analizá", "analysis", "arreglo", "batería", "bateria",
+    "analiza", "analizá", "analisis", "análisis", "analysis", "arreglo",
+    "batería", "bateria", "diagnóstico", "diagnostico", "hallazgo",
     "compres", "coro", "dinámica", "dinamica", "eq", "estructura",
     "filtro", "frecuencia", "guitarra", "letra", "master", "mezcla",
     "mejora", "problema", "producción", "produccion", "sección", "seccion",
-    "stem", "verso", "voz",
+    "medición", "medicion", "resultado", "stem", "verso", "voz",
+}
+FACTUAL_ANALYSIS_TERMS = {
+    "resultado", "resultados", "hallazgo", "hallazgos", "diagnóstico",
+    "diagnostico", "medición", "medicion", "qué detect", "que detect",
+}
+PROPOSAL_TERMS = {
+    "aplic", "cambi", "correg", "mejor", "proces", "propon", "recomend",
 }
 
 
@@ -134,6 +142,7 @@ def build_agent_messages(
     user_message: str,
     history: Sequence[Mapping[str, str]] = (),
 ) -> list[dict[str, str]]:
+    project_context = agent_project_context(project_context, user_message)
     messages = [
         {"role": "system", "content": load_system_prompt()},
         {
@@ -154,6 +163,15 @@ def build_agent_messages(
 def request_needs_deep_context(user_message: str) -> bool:
     normalized = user_message.casefold()
     return any(term in normalized for term in DEEP_CONTEXT_TERMS)
+
+
+def request_needs_reasoning(user_message: str) -> bool:
+    """Factual report reads do not need expensive model reasoning."""
+
+    normalized = user_message.casefold()
+    factual = any(term in normalized for term in FACTUAL_ANALYSIS_TERMS)
+    asks_for_action = any(term in normalized for term in PROPOSAL_TERMS)
+    return not factual or asks_for_action
 
 
 def compact_project_context(project_context: Mapping[str, Any]) -> dict[str, Any]:
@@ -181,10 +199,83 @@ def build_context_update_message(
     return (
         "PampaPilot actualizó el contexto técnico del mismo proyecto. "
         "No es una canción ni una conversación nueva. Usá estos datos como evidencia:\n"
-        + json.dumps(project_context, ensure_ascii=False, separators=(",", ":"))
+        + json.dumps(
+            agent_project_context(project_context, user_message),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         + "\n\nPedido actual del usuario: "
         + user_message.strip()
     )
+
+
+def agent_project_context(
+    project_context: Mapping[str, Any], user_message: str = ""
+) -> dict[str, Any]:
+    """Bound deep evidence for small local-model contexts without losing findings."""
+
+    result = dict(project_context)
+    lyrics = result.get("lyrics")
+    if isinstance(lyrics, Mapping):
+        lyric_context_requested = any(
+            term in user_message.casefold()
+            for term in ("letra", "lyric", "verso", "coro", "estrofa")
+        )
+        result["lyrics"] = dict(lyrics)
+        if lyric_context_requested:
+            result["lyrics"]["text"] = str(lyrics.get("text", ""))[:6_000]
+        else:
+            result["lyrics"].pop("text", None)
+    analysis = result.get("analysis")
+    if not isinstance(analysis, Mapping):
+        return result
+    result.pop("stems", None)
+    compact_stems = []
+    observation_fields = (
+        "integrated_lufs",
+        "sample_peak_dbfs",
+        "crest_factor_db",
+        "active_rms_spread_db",
+        "stereo_correlation",
+    )
+    for stem in analysis.get("stems", []):
+        if not isinstance(stem, Mapping):
+            continue
+        observations = stem.get("observations", {})
+        compact_stems.append(
+            {
+                "track_name": stem.get("track_name"),
+                "role": stem.get("role"),
+                "source_kind": stem.get("source_kind"),
+                "observations": {
+                    field: observations.get(field)
+                    for field in observation_fields
+                    if isinstance(observations, Mapping)
+                    and observations.get(field) is not None
+                },
+                "findings": list(stem.get("findings", [])),
+            }
+        )
+    relationships = analysis.get("relationships", {})
+    result["analysis"] = {
+        "analyzed_at_utc": analysis.get("analyzed_at_utc"),
+        "summary": dict(analysis.get("summary", {})),
+        "stems": compact_stems,
+        "relationships": {
+            "exact_duplicate_groups": list(
+                relationships.get("exact_duplicate_groups", [])
+            )
+            if isinstance(relationships, Mapping)
+            else [],
+            "spectral_overlap_candidate_count": len(
+                relationships.get("spectral_overlap_candidates", [])
+            )
+            if isinstance(relationships, Mapping)
+            else 0,
+        },
+        "verification": dict(analysis.get("verification", {})),
+    }
+    return result
 
 
 def parse_agent_response(raw: str) -> dict[str, Any]:

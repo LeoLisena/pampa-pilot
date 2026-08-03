@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from pampapilot.agent_context import (
+    agent_project_context,
     build_agent_messages,
     build_context_update_message,
     build_project_context,
@@ -11,6 +12,7 @@ from pampapilot.agent_context import (
     lyric_sections,
     parse_agent_response,
     request_needs_deep_context,
+    request_needs_reasoning,
 )
 
 
@@ -81,6 +83,15 @@ class AgentContextTests(unittest.TestCase):
     def test_routes_greetings_to_compact_context_and_analysis_to_deep_context(self):
         self.assertFalse(request_needs_deep_context("hola, ¿cómo estás?"))
         self.assertTrue(request_needs_deep_context("analizá la mezcla y la voz"))
+        self.assertTrue(
+            request_needs_deep_context("¿cuál fue el resultado de tu análisis?")
+        )
+        self.assertFalse(
+            request_needs_reasoning("¿cuál fue el resultado de tu análisis?")
+        )
+        self.assertTrue(
+            request_needs_reasoning("Con ese resultado, proponé una mejora")
+        )
         compact = compact_project_context(
             {
                 "song": {"title": "Test", "tempo_bpm": 85},
@@ -98,6 +109,46 @@ class AgentContextTests(unittest.TestCase):
         )
         self.assertIn("mismo proyecto", message)
         self.assertIn("analizá la voz", message)
+
+    def test_agent_context_keeps_findings_but_drops_verbose_analysis_fields(self):
+        context = agent_project_context(
+            {
+                "song": {"title": "Test"},
+                "lyrics": {"text": "x" * 7_000},
+                "analysis": {
+                    "summary": {"stem_count": 1},
+                    "stems": [
+                        {
+                            "track_name": "Voz",
+                            "role": "lead_vocal",
+                            "source_kind": "unknown",
+                            "policy": {"verbose": "not for the LLM"},
+                            "observations": {
+                                "integrated_lufs": -18.0,
+                                "spectral_band_energy_ratio": {"verbose": 1.0},
+                            },
+                            "findings": [{"id": "stereo.negative_correlation"}],
+                        }
+                    ],
+                    "relationships": {
+                        "exact_duplicate_groups": [],
+                        "spectral_overlap_candidates": [{"large": "payload"}],
+                    },
+                    "verification": {"signal_verified": True},
+                },
+            },
+            "analizá la letra",
+        )
+
+        self.assertEqual(len(context["lyrics"]["text"]), 6_000)
+        stem = context["analysis"]["stems"][0]
+        self.assertNotIn("policy", stem)
+        self.assertNotIn("spectral_band_energy_ratio", stem["observations"])
+        self.assertEqual(stem["findings"][0]["id"], "stereo.negative_correlation")
+        self.assertEqual(
+            context["analysis"]["relationships"]["spectral_overlap_candidate_count"],
+            1,
+        )
 
 
 if __name__ == "__main__":

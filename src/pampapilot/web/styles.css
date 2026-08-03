@@ -132,7 +132,8 @@ dialog::backdrop { background: #02070cbb; backdrop-filter: blur(4px); }
 .wide-modal { width: min(760px, calc(100vw - 40px)); }
 .modal-heading { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
 .modal-heading h2 { font-size: 22px; }
-.close-dialog { border: 0; background: transparent; color: #9db0bd; font-size: 24px; cursor: pointer; }
+.close-dialog { cursor: pointer; }
+.modal-heading > .close-dialog { border: 0; background: transparent; color: #9db0bd; font-size: 24px; }
 .modal-card label { display: grid; gap: 7px; color: #b9c8d2; font-size: 12px; margin-bottom: 14px; }
 .modal-card input, .modal-card select, .modal-card textarea { width: 100%; padding: 11px 12px; color: white; background: #0b151e; border: 1px solid #334653; border-radius: 7px; outline: none; }
 .modal-card input:focus, .modal-card select:focus, .modal-card textarea:focus { border-color: #408ed4; box-shadow: 0 0 0 3px #2e7fc326; }

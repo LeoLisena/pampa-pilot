@@ -255,6 +255,26 @@ function metric(value, unit = '') {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}${unit}` : '—';
 }
 
+function sourceKindLabel(value) {
+  return ({suno_stems: 'Suno', organic_multitrack: 'Orgánico', unknown: 'Sin clasificar', mixed: 'Suno + orgánico'})[value] || 'Sin clasificar';
+}
+
+function findingCopy(finding) {
+  const copies = {
+    'signal.clipping': ['Clipping detectado', 'El stem contiene muestras al límite digital.', 'Revisar el archivo fuente y preferir una reexportación limpia.'],
+    'signal.dc_offset': ['Desplazamiento de continua', 'El stem presenta un nivel de continua que puede consumir headroom.', 'Probar un filtro de eliminación de DC y verificar el render.'],
+    'stereo.negative_correlation': ['Posible incompatibilidad mono', 'La correlación estéreo negativa puede provocar pérdida de energía o cambios de timbre al pasar a mono.', 'Comparar en mono antes de reducir o modificar el ancho estéreo.'],
+    'dynamics.wide_organic_performance': ['Dinámica amplia', 'La interpretación orgánica presenta una variación dinámica considerable.', 'Evaluar automatización o compresión suave mediante una comparación A/B.'],
+    'dynamics.already_controlled_suno': ['Dinámica ya controlada', 'La dinámica estrecha es compatible con procesamiento previo de Suno.', 'No agregar compresión por rutina.'],
+    'spectrum.vocal_low_frequency_candidate': ['Graves en la voz', 'La voz concentra energía grave que conviene revisar en contexto.', 'Escuchar un recorte suave y compararlo en A/B.'],
+    'spectrum.vocal_sibilance_candidate': ['Sibilancia candidata', 'La voz concentra energía intermitente en la banda de sibilancia.', 'Escuchar las eses y evaluar un de-esser suave sólo si molestan.'],
+    'spectrum.low_end_concentration_candidate': ['Concentración de graves', 'Un stem que no es bajo concentra una proporción elevada de energía grave.', 'Revisar posible solapamiento con bajo y bombo antes de ecualizar.'],
+    'spectrum.presence_concentration_candidate': ['Concentración de presencia', 'El stem concentra energía en la zona de presencia.', 'Escuchar dureza o competencia con la voz antes de ecualizar.'],
+    'capture.quiet_floor_candidate': ['Piso en pasajes silenciosos', 'Los pasajes tranquilos de esta toma orgánica conservan señal residual.', 'Escuchar pausas y respiraciones antes de decidir limpieza o puerta.']
+  };
+  return copies[finding.id] || [finding.id, finding.observation || 'Hallazgo técnico para revisar.', finding.suggested_action || 'Verificar mediante escucha y A/B.'];
+}
+
 function renderAnalysisDetails() {
   const analysis = state.project?.analysis;
   const content = $('#analysis-detail-content');
@@ -266,14 +286,14 @@ function renderAnalysisDetails() {
     const observations = stem.observations || {};
     const findings = stem.findings || [];
     const findingMarkup = findings.length
-      ? `<ul>${findings.map(item => `<li><strong>${escapeHtml(item.id)}</strong><span>${escapeHtml(item.observation || '')}</span><small>${escapeHtml(item.suggested_action || '')}</small></li>`).join('')}</ul>`
+      ? `<ul>${findings.map(item => { const copy = findingCopy(item); return `<li><strong>${escapeHtml(copy[0])}</strong><span>${escapeHtml(copy[1])}</span><small>${escapeHtml(copy[2])}</small></li>`; }).join('')}</ul>`
       : '<p class="no-findings">Sin problemas objetivos detectados por las reglas actuales.</p>';
     return `<article class="analysis-stem-card">
-      <div class="analysis-stem-heading"><h3>${escapeHtml(stem.track_name || stem.name)}</h3><span class="badge">${escapeHtml(stem.source_kind || 'unknown')}</span></div>
+      <div class="analysis-stem-heading"><h3>${escapeHtml(stem.track_name || stem.name)}</h3><span class="badge">${escapeHtml(sourceKindLabel(stem.source_kind))}</span></div>
       <div class="metric-grid">
         <span><small>LUFS integrado</small><strong>${metric(observations.integrated_lufs, ' LUFS')}</strong></span>
         <span><small>Pico</small><strong>${metric(observations.sample_peak_dbfs, ' dBFS')}</strong></span>
-        <span><small>Crest factor</small><strong>${metric(observations.crest_factor_db, ' dB')}</strong></span>
+        <span><small>Factor de cresta</small><strong>${metric(observations.crest_factor_db, ' dB')}</strong></span>
         <span><small>Correlación estéreo</small><strong>${metric(observations.stereo_correlation)}</strong></span>
       </div>
       <div class="finding-list">${findingMarkup}</div>

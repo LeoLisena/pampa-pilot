@@ -26,6 +26,7 @@ from .agent_context import (
     compact_project_context,
     parse_agent_response,
     request_needs_deep_context,
+    request_needs_reasoning,
 )
 from .bridge_client import BridgeClient
 from .lmstudio_client import (
@@ -520,11 +521,12 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 messages = [{"role": "user", "content": value.message}]
         else:
             messages = [{"role": "user", "content": value.message}]
+        use_reasoning = deep_context and request_needs_reasoning(value.message)
         result = await asyncio.to_thread(
             LMStudioClient(runtime.brain()).chat_result,
             messages,
-            max_tokens=900 if deep_context else 220,
-            reasoning="on" if deep_context else "off",
+            max_tokens=900 if use_reasoning else 450 if deep_context else 220,
+            reasoning="on" if use_reasoning else "off",
             previous_response_id=None
             if conversation is None
             else conversation["response_id"],
