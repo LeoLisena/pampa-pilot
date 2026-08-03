@@ -8,6 +8,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from .media_discovery import WORKSPACE_ROOT, discover_song_media
+from .song_preparation import classify_stem
 
 
 SYSTEM_PROMPT_PATH = WORKSPACE_ROOT / "knowledge" / "agent" / "system-prompt.md"
@@ -67,10 +68,16 @@ def build_project_context(
     lyrics, lyrics_file = (
         _read_lyrics(stems_directory) if stems_directory is not None else ("", None)
     )
-    stems = [
-        {"name": Path(str(path)).stem, "format": Path(str(path)).suffix.lower()}
-        for path in discovery.get("stems", [])
-    ]
+    stems = []
+    for raw_path in discovery.get("stems", []):
+        path = Path(str(raw_path))
+        stems.append(
+            {
+                "name": path.stem,
+                "format": path.suffix.lower(),
+                "role": classify_stem(path),
+            }
+        )
     midi = [Path(str(path)).name for path in discovery.get("midi_files", [])]
     references = [Path(str(path)).name for path in discovery.get("references", [])]
     return {

@@ -68,12 +68,13 @@ function renderProject(project) {
   const list = $('#stem-list');
   list.innerHTML = '';
   if (!project.stems?.length) list.innerHTML = '<div class="empty-state">Todavía no se cargaron stems.</div>';
-  (project.stems || []).forEach((stem, index) => {
+  (project.stems || []).forEach(stem => {
     const row = document.createElement('div');
     row.className = 'stem-row';
     const badgeClass = stem.source === 'Suno' ? 'amber' : stem.source === 'Sin clasificar' ? 'neutral' : '';
+    const role = stem.role || 'other';
     row.innerHTML = `
-      <div class="stem-name"><span class="stem-icon">${index % 3 === 0 ? '◉' : index % 3 === 1 ? '♬' : '≋'}</span><span></span></div>
+      <div class="stem-name"><span class="stem-icon role-${escapeHtml(role)}">${instrumentIcon(role)}</span><span></span></div>
       <span class="badge ${badgeClass}">${escapeHtml(stem.source)}</span>
       <span class="badge neutral">${escapeHtml(stem.status)}</span>
       <span class="badge neutral">${escapeHtml(stem.problems)}</span>
@@ -85,6 +86,24 @@ function renderProject(project) {
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+}
+
+function instrumentIcon(role) {
+  const paths = {
+    lead_vocal: '<circle cx="12" cy="8" r="4"/><path d="M7 8v1a5 5 0 0 0 10 0V8M12 14v6M8 20h8"/>',
+    backing_vocals: '<circle cx="8" cy="8" r="2.5"/><circle cx="16" cy="8" r="2.5"/><path d="M3.5 18c.3-3 2-5 4.5-5s4.2 2 4.5 5M11.5 18c.3-3 2-5 4.5-5s4.2 2 4.5 5"/>',
+    choir: '<circle cx="6" cy="8" r="2"/><circle cx="12" cy="6.5" r="2.5"/><circle cx="18" cy="8" r="2"/><path d="M2.5 18c.3-3 1.5-5 3.5-5 1.2 0 2.2.7 2.8 1.8M7.5 19c.3-4 1.8-6 4.5-6s4.2 2 4.5 6M15.2 14.8c.6-1.1 1.6-1.8 2.8-1.8 2 0 3.2 2 3.5 5"/>',
+    guitar: '<path d="M14.5 4.5 20 2l2 2-2.5 5.5M14.5 4.5l5 5M15.5 8.5l-5 5M9.5 12.5c-2.4-1.3-5-.8-6.3 1.2-1.6 2.5.1 6.2 3.2 6.8 2.6.5 5-1.5 5.1-4.2 2.7-.1 4.7-2.5 4.2-5.1-.2-1.1-.7-2-1.2-2.7Z"/><circle cx="9" cy="15" r="1.5"/>',
+    bass: '<path d="M15 4 20 2l2 2-3 5M15 4l4 5M15.5 8.5l-5 5M9.5 12.5c-2.4-1.2-5-.7-6.2 1.4-1.4 2.5.3 6 3.3 6.6 2.8.5 5.2-1.8 4.8-4.6 2.3-.3 4-2.3 3.8-4.7-.1-1-.5-2-1-2.7Z"/><path d="m8 14 3 3"/>',
+    drums: '<ellipse cx="12" cy="15" rx="5" ry="6"/><circle cx="6" cy="10" r="3"/><circle cx="18" cy="10" r="3"/><path d="M3 4h6M6 4v3M15 4h6M18 4v3M8 21l-2 2M16 21l2 2"/>',
+    percussion: '<path d="m5 4 7 14M12 4 5 18"/><circle cx="5" cy="4" r="2.5"/><circle cx="12" cy="4" r="2.5"/><path d="M15 12h7M18.5 9v6M16 18h5"/>',
+    keys: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 5v14M10 5v14M14 5v14M18 5v14M5 5v7h2V5M9 5v7h2V5M17 5v7h2V5"/>',
+    synth: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M5 9c2-5 4 5 6 0s4 5 8 0M5 15h14M7 15v5M11 15v5M15 15v5"/>',
+    strings: '<path d="M12 2c2 2 2 4 .5 6 2 1.5 3.5 3.5 2.8 6.5-.6 2.8-2.2 5.3-3.3 7.5-1.1-2.2-2.7-4.7-3.3-7.5-.7-3 1-5 2.8-6.5C10 6 10 4 12 2Z"/><path d="M12 2v20M7 10l10 5M17 10 7 15"/>',
+    other: '<path d="M2 12h3l2-6 4 12 3-9 3 6 2-3h3"/>'
+  };
+  const safeRole = Object.hasOwn(paths, role) ? role : 'other';
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[safeRole]}</svg>`;
 }
 
 async function loadProjects(preferredName = '') {

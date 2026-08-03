@@ -66,7 +66,18 @@ h2 { margin: 0; font-size: 16px; }
 .stem-row { min-height: 60px; border-bottom: 1px solid #1f303e; font-size: 13px; }
 .stem-row:last-child { border-bottom: 0; }
 .stem-name { display: flex; align-items: center; gap: 11px; font-weight: 600; }
-.stem-icon { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 7px; background: #254f87; }
+.stem-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: #254f87; color: #d9ecff; }
+.stem-icon svg { width: 23px; height: 23px; }
+.stem-icon.role-lead_vocal { background: #285e9e; }
+.stem-icon.role-backing_vocals, .stem-icon.role-choir { background: #68439a; color: #efe4ff; }
+.stem-icon.role-guitar { background: #a45325; color: #ffe4ca; }
+.stem-icon.role-bass { background: #32705c; color: #d7fff0; }
+.stem-icon.role-drums { background: #a07825; color: #fff0c1; }
+.stem-icon.role-percussion { background: #a73e45; color: #ffe2e3; }
+.stem-icon.role-keys { background: #3657a2; color: #e3e9ff; }
+.stem-icon.role-synth { background: #247486; color: #d5faff; }
+.stem-icon.role-strings { background: #7f4c74; color: #ffe4f8; }
+.stem-icon.role-other { background: #405262; color: #d9e5ec; }
 .badge { display: inline-flex; width: fit-content; border-radius: 6px; padding: 5px 8px; border: 1px solid #2b6341; color: #95dda9; background: #173724; font-size: 11px; }
 .badge.neutral { border-color: #3b4a56; background: #202a32; color: #aebbc5; }
 .badge.amber { border-color: #634d24; background: #382b14; color: #edc46d; }

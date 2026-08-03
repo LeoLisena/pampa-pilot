@@ -34,7 +34,10 @@ class AgentContextTests(unittest.TestCase):
 
             self.assertEqual(context["song"]["tempo_bpm"], 85)
             self.assertEqual(context["lyrics"]["sections"], ["Intro", "Verse 1"])
-            self.assertEqual(context["stems"], [{"name": "01 Voz", "format": ".wav"}])
+            self.assertEqual(
+                context["stems"],
+                [{"name": "01 Voz", "format": ".wav", "role": "lead_vocal"}],
+            )
             self.assertNotIn(str(root), json.dumps(context))
 
     def test_sections_preserve_repeated_song_form(self):

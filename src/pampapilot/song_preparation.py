@@ -65,9 +65,9 @@ def classify_stem(path: Path) -> str:
     name = _track_label(path).casefold()
     if "backing" in name and ("vocal" in name or "voice" in name):
         return "backing_vocals"
-    if any(token in name for token in ("coral", "choir", "chorus")):
+    if any(token in name for token in ("coral", "choir", "chorus", "coro")):
         return "choir"
-    if any(token in name for token in ("vocal", "voice", "lead vox")):
+    if any(token in name for token in ("vocal", "voice", "lead vox", "voz")):
         return "lead_vocal"
     if "bass" in name or "bajo" in name:
         return "bass"
