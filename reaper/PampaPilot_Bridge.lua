@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.29.0"
+local BRIDGE_VERSION = "0.29.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -9,7 +9,9 @@ local RENDER_PROJECT_AUTOCLOSE_COMMAND_ID = 42230
 local WAV_24_BIT_RENDER_CONFIGURATION = "ZXZhdxgAAQ=="
 local SECTION = "PampaPilotBridge"
 local INSTANCE_KEY = "active_instance"
-local NEW_PROJECT_TAB_COMMAND_ID = 40023
+-- File: New project tab (ignore default template). 40023 is "New project"
+-- and may replace the active tab after prompting to save it.
+local NEW_PROJECT_TAB_COMMAND_ID = 41929
 
 local _, _, action_section_id, action_command_id = reaper.get_action_context()
 

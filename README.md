@@ -91,7 +91,7 @@ traduce órdenes simples o complejas del chat a
 un catálogo tipado, exige aprobación según una política configurable, verifica
 el estado y permite deshacer el plan completo. El texto libre del LLM nunca se
 ejecuta directamente.
-El puente 0.29.0 agrega materialización de canciones desde la web: crea o abre
+El puente 0.29.1 agrega materialización de canciones desde la web: crea o abre
 un RPP propio en una pestaña de REAPER, configura el BPM e importa únicamente
 los WAV cuyas rutas todavía no están presentes. La pantalla principal permite
 crear borradores vacíos, agregar o quitar stems y definir su orden antes de
