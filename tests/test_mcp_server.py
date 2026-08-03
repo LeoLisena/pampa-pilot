@@ -25,6 +25,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "preview_dynamic_resonance_proposal",
                 "preview_track_producer_chain",
                 "preview_project_track_producer_chain",
+                "preview_song_structure",
+                "apply_project_song_structure",
                 "preview_audio_integrity",
                 "preview_project_item_audio_integrity",
                 "get_render_settings",

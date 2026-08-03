@@ -68,6 +68,10 @@ from .song_preparation import (
 )
 from .song_diagnosis import diagnose_song as build_song_diagnosis
 from .song_processing_strategy import build_song_processing_strategy
+from .song_structure import (
+    build_song_structure_proposal,
+    build_structure_region_payload,
+)
 from .saturation_proposal import propose_saturation as build_saturation_proposal
 from .vocal_rider import build_vocal_rider_proposal
 
@@ -872,6 +876,56 @@ def preview_project_track_producer_chain(
     chain["track_guid"] = track_guid
     chain["reaper_observations"] = state["observations"]
     return chain
+
+
+@mcp.tool(
+    title="Previsualizar estructura de canción",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_song_structure(
+    audio_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    lyrics_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
+    vocal_path: Annotated[str | None, Field(min_length=1, max_length=4096)] = None,
+) -> dict[str, Any]:
+    """Usa etiquetas de la letra como orden y el audio para estimar los límites."""
+
+    audio = resolve_input_file(audio_path, suffixes={".wav", ".flac"})
+    lyrics = resolve_input_file(lyrics_path, suffixes={".txt"})
+    vocal = resolve_input_file(vocal_path, suffixes={".wav", ".flac"}) if vocal_path else None
+    return build_song_structure_proposal(audio, lyrics, bpm=bpm, vocal_path=vocal)
+
+
+@mcp.tool(
+    title="Crear regiones estructurales aprobadas",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_project_song_structure(
+    project_ref: str,
+    audio_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    lyrics_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    approved_structure_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
+    vocal_path: Annotated[str | None, Field(min_length=1, max_length=4096)] = None,
+) -> dict[str, Any]:
+    """Recalcula la propuesta y crea todas sus regiones en una única transacción."""
+
+    audio = resolve_input_file(audio_path, suffixes={".wav", ".flac"})
+    lyrics = resolve_input_file(lyrics_path, suffixes={".txt"})
+    vocal = resolve_input_file(vocal_path, suffixes={".wav", ".flac"}) if vocal_path else None
+    proposal = build_song_structure_proposal(audio, lyrics, bpm=bpm, vocal_path=vocal)
+    payload = build_structure_region_payload(proposal, approved_structure_id)
+    reply = _call(
+        "apply_song_structure_regions",
+        {"project_ref": project_ref, **payload},
+        timeout_seconds=60.0,
+    )
+    return {"proposal": proposal, "application": reply}
 
 
 @mcp.tool(

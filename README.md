@@ -81,6 +81,8 @@ El plan cruza los FX existentes, conserva los ajenos y bloquea ambigüedades.
 El puente 0.25.0 agrega la preparación A/B: renderiza el mix antes y después de
 la cadena, restaura los ajustes de render tras cada archivo y crea copias WAV
 igualadas por LUFS mediante atenuación. La decisión sonora sigue siendo humana.
+El puente 0.26.0 interpreta letras estructuradas, estima límites desde el audio
+y puede mostrar secciones coloreadas como regiones reversibles en REAPER.
 
 ## Decisiones iniciales
 

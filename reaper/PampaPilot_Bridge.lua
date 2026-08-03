@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.25.0"
+local BRIDGE_VERSION = "0.26.1"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -4052,6 +4052,129 @@ function ACTIONS.save_project_as(params, _)
     created_new_file = not saving_current,
     saved = true,
   }, observations(true)
+end
+
+function ACTIONS.apply_song_structure_regions(params, request_id)
+  local project, _, ref = require_project(params)
+  local structure_id = require_string(params.structure_id, "structure_id", 24)
+  if #structure_id ~= 24 or not structure_id:match("^[0-9a-f]+$") then
+    error("structure_id debe contener 24 caracteres hexadecimales")
+  end
+  local audio_sha256 = require_string(params.audio_sha256, "audio_sha256", 64)
+  local lyrics_sha256 = require_string(params.lyrics_sha256, "lyrics_sha256", 64)
+  if #audio_sha256 ~= 64 or not audio_sha256:match("^[0-9a-f]+$")
+      or #lyrics_sha256 ~= 64 or not lyrics_sha256:match("^[0-9a-f]+$") then
+    error("los hashes de estructura deben ser SHA-256 hexadecimales")
+  end
+  if type(params.regions) ~= "table" or #params.regions < 2 or #params.regions > 64 then
+    error("regions debe contener entre dos y 64 entradas")
+  end
+  local allowed_kinds = {
+    intro = {74, 144, 226}, verse = {82, 176, 122},
+    pre_chorus = {230, 174, 65}, chorus = {224, 88, 96},
+    final_chorus = {196, 82, 210}, bridge = {125, 105, 210},
+    outro = {92, 154, 166}, instrumental = {180, 126, 70},
+  }
+  local invisible_prefix = "\226\128\139"
+  local validated, previous_end = {}, nil
+  local project_length = reaper.GetProjectLength(project)
+  for index, raw in ipairs(params.regions) do
+    if type(raw) ~= "table" then error("cada región debe ser un objeto") end
+    local name = require_string(raw.name, "region.name", 128)
+    local display_name = require_string(raw.display_name, "region.display_name", 128)
+    if name:sub(1, #invisible_prefix) ~= invisible_prefix
+        or name:sub(#invisible_prefix + 1) ~= display_name then
+      error("cada región debe conservar su identidad interna invisible")
+    end
+    local kind = require_string(raw.kind, "region.kind", 32)
+    local rgb = allowed_kinds[kind]
+    if not rgb then error("tipo de sección no permitido: " .. kind) end
+    local start_seconds = require_number(
+      raw.start_seconds, "region.start_seconds", 0, 86400
+    )
+    local end_seconds = require_number(
+      raw.end_seconds, "region.end_seconds", 0, 86400
+    )
+    if end_seconds <= start_seconds then error("una región no tiene duración positiva") end
+    if previous_end ~= nil and math.abs(start_seconds - previous_end) > 0.001 then
+      error("las regiones de estructura deben ser contiguas")
+    end
+    if end_seconds > project_length + 0.25 then
+      error("una región excede la duración actual del proyecto")
+    end
+    previous_end = end_seconds
+    validated[index] = {
+      name = name, kind = kind, start_seconds = start_seconds,
+      end_seconds = end_seconds, display_name = display_name,
+      color = reaper.ColorToNative(rgb[1], rgb[2], rgb[3]) + 0x1000000,
+    }
+  end
+
+  local existing_structural_ids = {}
+  local _, marker_count, region_count = reaper.CountProjectMarkers(project)
+  for index = 0, marker_count + region_count - 1 do
+    local ok, is_region, _, _, name, marker_id = reaper.EnumProjectMarkers3(project, index)
+    if ok and ok ~= 0 and is_region and type(name) == "string"
+        and (name:match("^PampaPilot | ")
+          or name:sub(1, #invisible_prefix) == invisible_prefix) then
+      existing_structural_ids[#existing_structural_ids + 1] = marker_id
+    end
+  end
+  local replace_existing = params.replace_existing_pampapilot_regions == true
+  if #existing_structural_ids > 0 and not replace_existing then
+    error("el proyecto ya contiene regiones estructurales de PampaPilot")
+  end
+
+  local result = run_transaction(
+    project, request_id, "crear regiones de estructura " .. structure_id, function()
+      for _, marker_id in ipairs(existing_structural_ids) do
+        if not reaper.DeleteProjectMarker(project, marker_id, true) then
+          error("REAPER no pudo reemplazar una región estructural anterior")
+        end
+      end
+      local created = {}
+      for index, region in ipairs(validated) do
+        local marker_id = reaper.AddProjectMarker2(
+          project, true, region.start_seconds, region.end_seconds,
+          region.name, -1, region.color
+        )
+        if marker_id < 0 then error("REAPER no pudo crear una región estructural") end
+        created[index] = {
+          marker_id = marker_id, name = region.name, display_name = region.display_name,
+          kind = region.kind,
+          start_seconds = region.start_seconds, end_seconds = region.end_seconds,
+          color = region.color,
+        }
+      end
+      local observed_by_id = {}
+      local _, observed_markers, observed_regions = reaper.CountProjectMarkers(project)
+      for index = 0, observed_markers + observed_regions - 1 do
+        local ok, is_region, position, region_end, name, marker_id, color =
+          reaper.EnumProjectMarkers3(project, index)
+        if ok and ok ~= 0 and is_region then
+          observed_by_id[marker_id] = {
+            name = name, start_seconds = position, end_seconds = region_end, color = color,
+          }
+        end
+      end
+      for _, expected in ipairs(created) do
+        local observed = observed_by_id[expected.marker_id]
+        if not observed or observed.name ~= expected.name
+            or math.abs(observed.start_seconds - expected.start_seconds) > 0.000001
+            or math.abs(observed.end_seconds - expected.end_seconds) > 0.000001
+            or observed.color ~= expected.color then
+          error("la lectura posterior no confirmó una región estructural")
+        end
+      end
+      return {
+        project_ref = ref, structure_id = structure_id,
+        audio_sha256 = audio_sha256, lyrics_sha256 = lyrics_sha256,
+        regions = created, replaced_region_count = #existing_structural_ids,
+        transaction_request_id = request_id,
+      }
+    end
+  )
+  return result, observations(true)
 end
 
 function ACTIONS.undo_transaction(params, _)

@@ -187,6 +187,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Guarda el proyecto activo con una ruta nueva permitida y la verifica.",
         ),
         ActionSpec(
+            "apply_song_structure_regions",
+            True,
+            VerificationLevel.STATE,
+            "Crea regiones estructurales coloreadas, contiguas y verificadas.",
+        ),
+        ActionSpec(
             "add_stock_fx",
             True,
             VerificationLevel.STATE,

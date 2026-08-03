@@ -152,7 +152,9 @@ Referencias de diseño para carga genérica de presets:
 
 - [ ] Clasificación fiable de fuente: Suno, grabación orgánica o desconocida.
 - [ ] Detección de tonalidad y acordes combinando MIDI y audio.
-- [ ] Análisis de estructura: intro, estrofa, estribillo, puente y final.
+- [x] Análisis de estructura guiado por letra opcional y temporizado por audio.
+- [ ] Validar visualmente en REAPER las regiones de `Mi Pequeño Sol` y ajustar
+      manualmente cualquier límite que no coincida con la escucha.
 - [ ] Evaluación de balance espectral y dinámica frente a referencia, con
       recomendaciones y no cambios automáticos ciegos.
 - [ ] Registro de cada decisión, evidencia, confianza y posibilidad de rechazo.
