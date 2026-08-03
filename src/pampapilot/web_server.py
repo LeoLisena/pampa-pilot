@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -33,7 +34,11 @@ from .lmstudio_client import (
     LMStudioError,
     normalize_base_url,
 )
-from .media_discovery import WORKSPACE_ROOT
+from .media_discovery import WORKSPACE_ROOT, discover_song_media
+from .project_analysis import (
+    analyze_project_media,
+    source_overrides_from_metadata,
+)
 from .secret_store import SecretStoreError, WindowsSecretStore
 
 
@@ -68,7 +73,7 @@ class ProposalDecision(BaseModel):
 
 
 class RuntimeState:
-    """Process-local settings; secrets never touch disk or API responses."""
+    """Process-local state; secrets never appear in API responses or plain text."""
 
     def __init__(self) -> None:
         self._lock = RLock()
@@ -159,11 +164,13 @@ class RuntimeState:
         project_name: str,
         response_id: str,
         context_level: str,
+        context_revision: str,
     ) -> None:
         with self._lock:
             self._conversations[(conversation_id, project_name)] = {
                 "response_id": response_id,
                 "context_level": context_level,
+                "context_revision": context_revision,
             }
 
     def decide(self, proposal_id: str, decision: str) -> dict[str, Any]:
@@ -217,16 +224,69 @@ def _project_names(workspace_root: Path = WORKSPACE_ROOT) -> list[str]:
     )
 
 
-def _project_view(name: str) -> dict[str, Any]:
-    context = build_project_context(name)
-    song = context["song"]
-    source = str(song.get("source_kind") or "unknown")
-    source_label = {
+def _context_revision(context: dict[str, Any]) -> str:
+    serialized = json.dumps(
+        context,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def _project_metadata(name: str) -> dict[str, Any]:
+    discovery = discover_song_media(name)
+    directory = discovery.get("stems_directory")
+    if not directory:
+        return {}
+    path = Path(str(directory)) / "session.json"
+    if not path.is_file():
+        return {}
+    decoded = json.loads(path.read_text(encoding="utf-8-sig"))
+    return dict(decoded) if isinstance(decoded, dict) else {}
+
+
+def _source_label(source_kind: str) -> str:
+    return {
         "suno_stems": "Suno",
         "organic_multitrack": "Orgánico",
         "unknown": "Sin clasificar",
         "mixed": "Suno + orgánico",
-    }.get(source, source)
+    }.get(source_kind, source_kind)
+
+
+def _project_view(name: str) -> dict[str, Any]:
+    context = build_project_context(name)
+    song = context["song"]
+    source = str(song.get("source_kind") or "unknown")
+    source_label = _source_label(source)
+    analysis = context.get("analysis")
+    analyzed_by_name = {
+        str(stem.get("name")): stem
+        for stem in (analysis or {}).get("stems", [])
+        if isinstance(stem, dict)
+    }
+    stems = []
+    for stem in context["stems"]:
+        diagnosed = analyzed_by_name.get(str(stem["name"]))
+        findings = diagnosed.get("findings", []) if diagnosed else []
+        finding_count = len(findings) if isinstance(findings, list) else 0
+        stems.append(
+            {
+                **stem,
+                "source": _source_label(str(diagnosed.get("source_kind")))
+                if diagnosed
+                else source_label,
+                "status": "Analizado" if diagnosed else "Disponible",
+                "problems": (
+                    "Sin problemas detectados"
+                    if diagnosed and finding_count == 0
+                    else f"{finding_count} hallazgo" + ("" if finding_count == 1 else "s")
+                    if diagnosed
+                    else "Sin analizar"
+                ),
+            }
+        )
     return {
         "name": song["title"],
         "tempo_bpm": song.get("tempo_bpm"),
@@ -235,18 +295,11 @@ def _project_view(name: str) -> dict[str, Any]:
         "status": song.get("status"),
         "sections": context["lyrics"]["sections"],
         "lyrics_available": context["lyrics"]["available"],
-        "stems": [
-            {
-                **stem,
-                "source": source_label,
-                "status": "Disponible",
-                "problems": "Sin analizar",
-            }
-            for stem in context["stems"]
-        ],
+        "stems": stems,
         "midi_files": context["midi_files"],
         "references": context["references"],
         "verification": context["verification"],
+        "analysis": analysis,
     }
 
 
@@ -321,6 +374,35 @@ def get_project(project_name: str) -> dict[str, Any]:
         return _project_view(_validate_song_name(project_name))
     except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{project_name}/analysis")
+async def analyze_project(project_name: str) -> dict[str, Any]:
+    """Run the deterministic WAV engine before asking any LLM to interpret it."""
+
+    try:
+        name = _validate_song_name(project_name)
+        metadata = _project_metadata(name)
+        bpm = metadata.get("tempo_bpm")
+        if not isinstance(bpm, (int, float)):
+            raise ValueError("El proyecto necesita un BPM antes de analizarlo")
+        source_kind = str(metadata.get("source_kind", "unknown"))
+        artifact = await asyncio.to_thread(
+            analyze_project_media,
+            name,
+            float(bpm),
+            source_kind,
+            source_overrides_from_metadata(metadata),
+        )
+        project = _project_view(name)
+    except (ValueError, FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    diagnosis = artifact["diagnosis"]
+    return {
+        "project": project,
+        "summary": diagnosis["summary"],
+        "verification": diagnosis["verification"],
+    }
 
 
 def _copy_upload(upload: UploadFile, destination: Path, suffixes: set[str]) -> None:
@@ -406,23 +488,36 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             or (conversation is not None and conversation.get("context_level") == "deep")
             else "compact"
         )
+        context: dict[str, Any] | None = None
+        context_revision = (
+            conversation.get("context_revision", "") if conversation else ""
+        )
         if conversation is None:
             context = build_project_context(project_name)
             if not deep_context:
                 context = compact_project_context(context)
+            context_revision = _context_revision(context)
             messages = build_agent_messages(
                 context,
                 value.message,
                 [item.model_dump() for item in value.history],
             )
-        elif deep_context and conversation.get("context_level") != "deep":
+        elif deep_context:
             context = build_project_context(project_name)
-            messages = [
-                {
-                    "role": "user",
-                    "content": build_context_update_message(context, value.message),
-                }
-            ]
+            current_revision = _context_revision(context)
+            if (
+                conversation.get("context_level") != "deep"
+                or conversation.get("context_revision") != current_revision
+            ):
+                context_revision = current_revision
+                messages = [
+                    {
+                        "role": "user",
+                        "content": build_context_update_message(context, value.message),
+                    }
+                ]
+            else:
+                messages = [{"role": "user", "content": value.message}]
         else:
             messages = [{"role": "user", "content": value.message}]
         result = await asyncio.to_thread(
@@ -454,6 +549,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 project_name,
                 result.response_id,
                 context_level,
+                context_revision,
             )
     except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -76,12 +76,27 @@ function renderProject(project) {
     row.innerHTML = `
       <div class="stem-name"><span class="stem-icon role-${escapeHtml(role)}">${instrumentIcon(role)}</span><span></span></div>
       <span class="badge ${badgeClass}">${escapeHtml(stem.source)}</span>
-      <span class="badge neutral">${escapeHtml(stem.status)}</span>
-      <span class="badge neutral">${escapeHtml(stem.problems)}</span>
+      <span class="badge ${stem.status === 'Analizado' ? '' : 'neutral'}">${escapeHtml(stem.status)}</span>
+      <span class="badge ${stem.problems === 'Sin problemas detectados' ? '' : 'neutral'}">${escapeHtml(stem.problems)}</span>
       <div class="stem-actions"><button class="play-button" title="Escuchar en REAPER">▶</button><button class="icon-button">⋮</button></div>`;
     row.querySelector('.stem-name span:last-child').textContent = stem.name;
     list.appendChild(row);
   });
+  const banner = $('#analysis-banner');
+  const bannerTitle = banner.querySelector('strong');
+  const bannerText = banner.querySelector('p');
+  const detailsButton = $('#analysis-details');
+  if (project.analysis) {
+    const counts = project.analysis.summary?.finding_counts_by_severity || {};
+    const findingCount = Object.values(counts).reduce((total, value) => total + Number(value || 0), 0);
+    bannerTitle.textContent = 'Análisis técnico completado.';
+    bannerText.textContent = `${project.analysis.summary?.stem_count || project.stems?.length || 0} stems medidos · ${findingCount} hallazgo${findingCount === 1 ? '' : 's'} para revisar · ninguna acción aplicada.`;
+    detailsButton.disabled = false;
+  } else {
+    bannerTitle.textContent = 'Proyecto cargado.';
+    bannerText.textContent = 'Los datos técnicos aparecerán aquí después del análisis.';
+    detailsButton.disabled = true;
+  }
 }
 
 function escapeHtml(value) {
@@ -216,10 +231,61 @@ $('#chat-input').addEventListener('input', event => {
   input.style.height = `${Math.min(input.scrollHeight, 110)}px`;
 });
 
-$('#analyze-project').addEventListener('click', () => {
+$('#analyze-project').addEventListener('click', async event => {
   if (!state.project) return;
-  $('#chat-input').value = 'Analizá los stems del proyecto y proponé el próximo paso más útil.';
-  $('#chat-form').requestSubmit();
+  const button = event.currentTarget;
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Midiendo stems…';
+  toast('Analizando los WAV sin modificar REAPER…');
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(state.project.name)}/analysis`, {method: 'POST'});
+    renderProject(result.project);
+    $('#chat-input').value = 'Interpretá el diagnóstico técnico recién generado y proponé el próximo paso más útil, sin aplicar cambios todavía.';
+    $('#chat-form').requestSubmit();
+  } catch (error) {
+    addMessage('assistant', `No pude analizar el proyecto: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+});
+
+function metric(value, unit = '') {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}${unit}` : '—';
+}
+
+function renderAnalysisDetails() {
+  const analysis = state.project?.analysis;
+  const content = $('#analysis-detail-content');
+  if (!analysis) {
+    content.innerHTML = '<div class="empty-state">Todavía no hay un análisis vigente.</div>';
+    return;
+  }
+  const stemCards = (analysis.stems || []).map(stem => {
+    const observations = stem.observations || {};
+    const findings = stem.findings || [];
+    const findingMarkup = findings.length
+      ? `<ul>${findings.map(item => `<li><strong>${escapeHtml(item.id)}</strong><span>${escapeHtml(item.observation || '')}</span><small>${escapeHtml(item.suggested_action || '')}</small></li>`).join('')}</ul>`
+      : '<p class="no-findings">Sin problemas objetivos detectados por las reglas actuales.</p>';
+    return `<article class="analysis-stem-card">
+      <div class="analysis-stem-heading"><h3>${escapeHtml(stem.track_name || stem.name)}</h3><span class="badge">${escapeHtml(stem.source_kind || 'unknown')}</span></div>
+      <div class="metric-grid">
+        <span><small>LUFS integrado</small><strong>${metric(observations.integrated_lufs, ' LUFS')}</strong></span>
+        <span><small>Pico</small><strong>${metric(observations.sample_peak_dbfs, ' dBFS')}</strong></span>
+        <span><small>Crest factor</small><strong>${metric(observations.crest_factor_db, ' dB')}</strong></span>
+        <span><small>Correlación estéreo</small><strong>${metric(observations.stereo_correlation)}</strong></span>
+      </div>
+      <div class="finding-list">${findingMarkup}</div>
+    </article>`;
+  }).join('');
+  content.innerHTML = `<p class="analysis-safety">Análisis offline de señal. No modifica REAPER y no reemplaza la escucha humana.</p><div class="analysis-stem-list">${stemCards}</div>`;
+}
+
+const analysisDialog = $('#analysis-dialog');
+$('#analysis-details').addEventListener('click', () => {
+  renderAnalysisDetails();
+  analysisDialog.showModal();
 });
 
 const settingsDialog = $('#settings-dialog');

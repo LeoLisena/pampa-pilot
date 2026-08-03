@@ -16,6 +16,12 @@ class WebServerTests(unittest.TestCase):
         self.assertIn("PampaPilot", response.text)
         self.assertIn("Productor IA", response.text)
 
+    @patch("pampapilot.web_server._project_names", return_value=[])
+    def test_project_list_returns_an_empty_collection(self, _names):
+        response = self.client.get("/api/projects")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"projects": []})
+
     def test_public_settings_never_return_token(self):
         response = self.client.get("/api/settings/brain")
         self.assertEqual(response.status_code, 200)
@@ -82,6 +88,34 @@ class WebServerTests(unittest.TestCase):
             chat.call_args_list[1].kwargs["previous_response_id"], "resp_one"
         )
         self.assertEqual(context.call_count, 1)
+
+    @patch("pampapilot.web_server.LMStudioClient.chat_result")
+    @patch("pampapilot.web_server.build_project_context")
+    def test_deep_chat_refreshes_context_when_analysis_changes(self, context, chat):
+        from pampapilot.lmstudio_client import LMStudioChatResult
+
+        context.side_effect = [
+            {"song": {"title": "Test"}, "analysis": None},
+            {"song": {"title": "Test"}, "analysis": {"summary": {"stem_count": 2}}},
+        ]
+        chat.side_effect = [
+            LMStudioChatResult('{"message":"Primero","proposal":null}', "analysis-one", {}),
+            LMStudioChatResult('{"message":"Actualizado","proposal":null}', "analysis-two", {}),
+        ]
+        payload = {
+            "project_name": "Test",
+            "message": "analizá los stems",
+            "history": [],
+            "conversation_id": "analysis-refresh-test",
+        }
+
+        first = self.client.post("/api/chat", json=payload)
+        second = self.client.post("/api/chat", json=payload)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(chat.call_args_list[1].kwargs["previous_response_id"], "analysis-one")
+        self.assertIn("actualizó el contexto técnico", chat.call_args_list[1].args[0][0]["content"])
 
 
 if __name__ == "__main__":

@@ -57,3 +57,22 @@ envían sólo el mensaje nuevo y `previous_response_id`. Si cambia el nivel de
 contexto, PampaPilot agrega los nuevos datos dentro de la misma conversación.
 Sólo al cambiar de proyecto crea otro chat; el navegador recuerda el identificador
 de conversación asignado a cada canción.
+
+## Análisis técnico desde la interfaz
+
+**Analizar proyecto** ejecuta primero el motor determinista y local de PampaPilot:
+
+1. mide cada WAV (LUFS, pico, dinámica, espectro, correlación y otras métricas);
+2. aplica las reglas de diagnóstico según el origen declarado;
+3. guarda `sessions/<canción>/analysis/song-diagnosis.json`;
+4. actualiza el estado y los hallazgos de cada stem en la interfaz;
+5. recién entonces entrega al LLM un resumen sin rutas ni hashes para su interpretación.
+
+El reporte se invalida automáticamente cuando cambia un stem, el BPM o la clasificación
+de origen. Un proyecto `mixed` sin origen por stem se analiza como `unknown`: el motor no
+adivina qué pistas son Suno u orgánicas. El análisis nunca modifica REAPER y sus resultados
+son observaciones técnicas que requieren escucha antes de tomar decisiones de mezcla.
+
+La API correspondiente es `POST /api/projects/{project_name}/analysis`. Cuando aparece
+un reporte nuevo, el chat conserva la conversación de la misma canción pero recibe una
+actualización explícita de contexto, independientemente del LLM configurado.

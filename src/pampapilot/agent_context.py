@@ -8,6 +8,11 @@ import re
 from typing import Any, Mapping, Sequence
 
 from .media_discovery import WORKSPACE_ROOT, discover_song_media
+from .project_analysis import (
+    load_project_analysis,
+    public_project_analysis,
+    source_overrides_from_metadata,
+)
 from .song_preparation import classify_stem
 
 
@@ -20,6 +25,11 @@ DEEP_CONTEXT_TERMS = {
     "mejora", "problema", "producción", "produccion", "sección", "seccion",
     "stem", "verso", "voz",
 }
+
+
+def _stem_order(path: Path) -> tuple[int, str]:
+    match = re.match(r"^\s*(\d+)", path.stem)
+    return (int(match.group(1)) if match else 10_000, path.name.casefold())
 
 
 def load_system_prompt(path: Path = SYSTEM_PROMPT_PATH) -> str:
@@ -69,8 +79,11 @@ def build_project_context(
         _read_lyrics(stems_directory) if stems_directory is not None else ("", None)
     )
     stems = []
-    for raw_path in discovery.get("stems", []):
-        path = Path(str(raw_path))
+    stem_paths = sorted(
+        (Path(str(raw_path)) for raw_path in discovery.get("stems", [])),
+        key=_stem_order,
+    )
+    for path in stem_paths:
         stems.append(
             {
                 "name": path.stem,
@@ -80,12 +93,22 @@ def build_project_context(
         )
     midi = [Path(str(path)).name for path in discovery.get("midi_files", [])]
     references = [Path(str(path)).name for path in discovery.get("references", [])]
+    source_kind = str(metadata.get("source_kind", "unknown"))
+    source_overrides = source_overrides_from_metadata(metadata)
+    artifact = load_project_analysis(
+        str(discovery["song_name"]),
+        metadata.get("tempo_bpm"),
+        source_kind,
+        source_overrides,
+        workspace_root=workspace_root,
+    )
+    analysis = public_project_analysis(artifact) if artifact is not None else None
     return {
         "song": {
             "title": metadata.get("title", discovery["song_name"]),
             "tempo_bpm": metadata.get("tempo_bpm"),
             "time_signature": metadata.get("time_signature"),
-            "source_kind": metadata.get("source_kind", "unknown"),
+            "source_kind": source_kind,
             "status": metadata.get("status", "media_discovered"),
         },
         "stems": stems,
@@ -97,8 +120,9 @@ def build_project_context(
             "sections": lyric_sections(lyrics),
             "text": lyrics[:16_000],
         },
+        "analysis": analysis,
         "verification": {
-            "signal_analyzed": False,
+            "signal_analyzed": analysis is not None,
             "reaper_state_verified": False,
             "perceptually_evaluated": False,
         },
