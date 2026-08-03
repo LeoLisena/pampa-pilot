@@ -23,6 +23,15 @@ contra nombres, roles, GUID, estado actual y evidencia del motor. El texto del L
 nunca se envía a REAPER. La interfaz manual y el chat comparten el mismo gateway
 determinista, lectura posterior y Undo.
 
+## Memoria de conversación por canción
+
+El chat activo persiste entre reinicios y conserva como máximo 100 mensajes. El
+menú del Productor IA permite iniciar un chat nuevo, archivar el actual, restaurar
+conversaciones anteriores o borrar definitivamente sólo la conversación activa.
+Se conservan hasta 20 conversaciones archivadas por canción. La ventana principal
+y el modo compacto usan el mismo ID servido por PampaPilot y no generan
+historiales divergentes.
+
 ## Arranque
 
 ```powershell

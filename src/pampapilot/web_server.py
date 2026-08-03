@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from dataclasses import replace
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -337,6 +338,10 @@ class RuntimeState:
                 "context_revision": context_revision,
             }
 
+    def drop_conversation(self, conversation_id: str, project_name: str) -> None:
+        with self._lock:
+            self._conversations.pop((conversation_id, project_name), None)
+
     def proposal(self, proposal_id: str) -> dict[str, Any]:
         with self._lock:
             proposal = self._proposals.get(proposal_id)
@@ -394,34 +399,169 @@ def _write_chat_state(value: dict[str, Any]) -> None:
         temporary.replace(CHAT_STATE_PATH)
 
 
-def _chat_state_for_project(project_name: str) -> dict[str, Any]:
-    state = _read_chat_state()
-    projects = state.get("projects", {})
-    history = projects.get(project_name, []) if isinstance(projects, dict) else []
-    if not isinstance(history, list):
-        history = []
+def _new_chat_record() -> dict[str, Any]:
+    return {"conversation_id": str(uuid4()), "history": [], "archives": []}
+
+
+def _normalized_chat_record(raw: object) -> dict[str, Any]:
+    if isinstance(raw, list):
+        return {
+            "conversation_id": str(uuid4()),
+            "history": [item for item in raw if isinstance(item, dict)][-100:],
+            "archives": [],
+        }
+    if not isinstance(raw, dict):
+        return _new_chat_record()
+    conversation_id = raw.get("conversation_id")
+    history = raw.get("history", [])
+    archives = raw.get("archives", [])
     return {
-        "reasoning_mode": state.get("reasoning_mode", "auto"),
-        "history": [item for item in history if isinstance(item, dict)][-100:],
+        "conversation_id": conversation_id
+        if isinstance(conversation_id, str) and conversation_id
+        else str(uuid4()),
+        "history": [item for item in history if isinstance(item, dict)][-100:]
+        if isinstance(history, list)
+        else [],
+        "archives": [item for item in archives if isinstance(item, dict)][-20:]
+        if isinstance(archives, list)
+        else [],
     }
 
 
-def _record_chat_exchange(project_name: str, user_message: str, response: dict[str, Any]) -> dict[str, Any]:
+def _archive_summary(archive: dict[str, Any]) -> dict[str, Any]:
+    history = archive.get("history", [])
+    first_user = next(
+        (
+            str(item.get("content", ""))
+            for item in history
+            if isinstance(item, dict) and item.get("role") == "user"
+        ),
+        "Conversación sin título",
+    )
+    return {
+        "archive_id": archive.get("archive_id"),
+        "conversation_id": archive.get("conversation_id"),
+        "archived_at": archive.get("archived_at"),
+        "title": first_user[:80],
+        "message_count": len(history),
+    }
+
+
+def _chat_state_for_project(project_name: str) -> dict[str, Any]:
     state = _read_chat_state()
     projects = state.get("projects")
     projects = dict(projects) if isinstance(projects, dict) else {}
-    history = projects.get(project_name, [])
-    history = list(history) if isinstance(history, list) else []
+    record = _normalized_chat_record(projects.get(project_name))
+    if projects.get(project_name) != record:
+        projects[project_name] = record
+        state["projects"] = projects
+        _write_chat_state(state)
+    return {
+        "reasoning_mode": state.get("reasoning_mode", "auto"),
+        "conversation_id": record["conversation_id"],
+        "history": record["history"],
+        "archives": [_archive_summary(item) for item in reversed(record["archives"])],
+    }
+
+
+def _start_new_project_chat(project_name: str, *, archive_current: bool) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects")
+    projects = dict(projects) if isinstance(projects, dict) else {}
+    record = _normalized_chat_record(projects.get(project_name))
+    if archive_current and record["history"]:
+        record["archives"].append(
+            {
+                "archive_id": str(uuid4()),
+                "conversation_id": record["conversation_id"],
+                "archived_at": datetime.now(timezone.utc).isoformat(),
+                "history": record["history"],
+            }
+        )
+        record["archives"] = record["archives"][-20:]
+    runtime.drop_conversation(record["conversation_id"], project_name)
+    record["conversation_id"] = str(uuid4())
+    record["history"] = []
+    projects[project_name] = record
+    state["projects"] = projects
+    _write_chat_state(state)
+    return _chat_state_for_project(project_name)
+
+
+def _record_chat_exchange(
+    project_name: str,
+    conversation_id: str,
+    user_message: str,
+    response: dict[str, Any],
+) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects")
+    projects = dict(projects) if isinstance(projects, dict) else {}
+    record = _normalized_chat_record(projects.get(project_name))
+    if record["conversation_id"] != conversation_id:
+        record["conversation_id"] = conversation_id
+        record["history"] = []
+    history = record["history"]
     history.extend(
         [
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": str(response.get("message", ""))},
         ]
     )
-    projects[project_name] = history[-100:]
+    record["history"] = history[-100:]
+    projects[project_name] = record
     state["projects"] = projects
     _write_chat_state(state)
     return response
+
+
+def _archived_project_chat(project_name: str, archive_id: str) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects")
+    record = _normalized_chat_record(
+        projects.get(project_name) if isinstance(projects, dict) else None
+    )
+    matches = [
+        item for item in record["archives"]
+        if item.get("archive_id") == archive_id
+    ]
+    if len(matches) != 1:
+        raise KeyError(archive_id)
+    archive = matches[0]
+    return {**_archive_summary(archive), "history": archive.get("history", [])}
+
+
+def _restore_project_chat(project_name: str, archive_id: str) -> dict[str, Any]:
+    state = _read_chat_state()
+    projects = state.get("projects")
+    projects = dict(projects) if isinstance(projects, dict) else {}
+    record = _normalized_chat_record(projects.get(project_name))
+    selected = next(
+        (item for item in record["archives"] if item.get("archive_id") == archive_id),
+        None,
+    )
+    if selected is None:
+        raise KeyError(archive_id)
+    remaining = [item for item in record["archives"] if item is not selected]
+    if record["history"]:
+        remaining.append(
+            {
+                "archive_id": str(uuid4()),
+                "conversation_id": record["conversation_id"],
+                "archived_at": datetime.now(timezone.utc).isoformat(),
+                "history": record["history"],
+            }
+        )
+    runtime.drop_conversation(record["conversation_id"], project_name)
+    record = {
+        "conversation_id": str(selected.get("conversation_id") or uuid4()),
+        "history": list(selected.get("history", []))[-100:],
+        "archives": remaining[-20:],
+    }
+    projects[project_name] = record
+    state["projects"] = projects
+    _write_chat_state(state)
+    return _chat_state_for_project(project_name)
 
 
 def _validate_song_name(value: str) -> str:
@@ -1543,6 +1683,52 @@ def get_project_chat_state(project_name: str) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/api/projects/{project_name}/chat/new")
+def start_project_chat(project_name: str) -> dict[str, Any]:
+    try:
+        return _start_new_project_chat(
+            _validate_song_name(project_name), archive_current=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{project_name}/chat/archive")
+def archive_project_chat(project_name: str) -> dict[str, Any]:
+    try:
+        return _start_new_project_chat(
+            _validate_song_name(project_name), archive_current=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.delete("/api/projects/{project_name}/chat/history")
+def clear_project_chat(project_name: str) -> dict[str, Any]:
+    try:
+        return _start_new_project_chat(
+            _validate_song_name(project_name), archive_current=False
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/projects/{project_name}/chat/archives/{archive_id}")
+def get_archived_project_chat(project_name: str, archive_id: str) -> dict[str, Any]:
+    try:
+        return _archived_project_chat(_validate_song_name(project_name), archive_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Conversación archivada no encontrada") from exc
+
+
+@app.post("/api/projects/{project_name}/chat/archives/{archive_id}/restore")
+def restore_archived_project_chat(project_name: str, archive_id: str) -> dict[str, Any]:
+    try:
+        return _restore_project_chat(_validate_song_name(project_name), archive_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Conversación archivada no encontrada") from exc
+
+
 @app.put("/api/chat/reasoning")
 def set_chat_reasoning(value: ReasoningModeInput) -> dict[str, Any]:
     state = _read_chat_state()
@@ -2292,9 +2478,12 @@ async def sync_project_to_reaper(project_name: str) -> dict[str, Any]:
 async def chat(value: ChatInput) -> dict[str, Any]:
     try:
         project_name = _validate_song_name(value.project_name)
+        conversation_id = str(
+            _chat_state_for_project(project_name)["conversation_id"]
+        )
         deep_context = request_needs_deep_context(value.message)
         direct_action = request_is_direct_action(value.message)
-        conversation = runtime.conversation(value.conversation_id, project_name)
+        conversation = runtime.conversation(conversation_id, project_name)
         context_level = (
             "action"
             if direct_action
@@ -2491,7 +2680,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
         }
         if result.response_id:
             runtime.save_conversation(
-                value.conversation_id,
+                conversation_id,
                 project_name,
                 result.response_id,
                 context_level,
@@ -2545,11 +2734,15 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                         "reaper_modified": False,
                     }
                 )
-                return _record_chat_exchange(project_name, value.message, response)
+                return _record_chat_exchange(
+                    project_name, conversation_id, value.message, response
+                )
             except Exception as exc:
                 response["message"] = f"{response['message']}\n\nNo pude completar el análisis: {exc}"
                 response["proposal"] = None
-                return _record_chat_exchange(project_name, value.message, response)
+                return _record_chat_exchange(
+                    project_name, conversation_id, value.message, response
+                )
         try:
             plan = await asyncio.to_thread(_build_chat_action_plan, project_name, actions)
         except Exception as exc:
@@ -2558,7 +2751,9 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             )
             response["proposal"] = None
             response["action_error"] = str(exc)
-            return _record_chat_exchange(project_name, value.message, response)
+            return _record_chat_exchange(
+                project_name, conversation_id, value.message, response
+            )
         proposal_id = runtime.add_proposal(plan, executable=True)
         stored = {**plan, "proposal_id": proposal_id, "status": "pending"}
         approval_mode = runtime.approval_mode()
@@ -2606,7 +2801,9 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 "status": "pending",
                 "executable": False,
             }
-    return _record_chat_exchange(project_name, value.message, response)
+    return _record_chat_exchange(
+        project_name, conversation_id, value.message, response
+    )
 
 
 @app.post("/api/proposals/{proposal_id}/decision")

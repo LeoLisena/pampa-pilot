@@ -11,6 +11,7 @@ from starlette.datastructures import UploadFile
 from pampapilot.web_server import (
     _named_uploads,
     _ordered_stem_paths,
+    _record_chat_exchange,
     _suggested_track_names,
     app,
     runtime,
@@ -58,7 +59,42 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(reasoning.status_code, 200)
         state = self.client.get("/api/projects/Mi%20Peque%C3%B1o%20Sol/chat-state")
         self.assertEqual(state.status_code, 200)
-        self.assertEqual(state.json(), {"reasoning_mode": "deep", "history": []})
+        self.assertEqual(state.json()["reasoning_mode"], "deep")
+        self.assertEqual(state.json()["history"], [])
+        self.assertEqual(state.json()["archives"], [])
+        self.assertTrue(state.json()["conversation_id"])
+
+    def test_chat_can_be_archived_restored_and_cleared(self):
+        project = "Mi Pequeño Sol"
+        initial = self.client.get(
+            "/api/projects/Mi%20Peque%C3%B1o%20Sol/chat-state"
+        ).json()
+        _record_chat_exchange(
+            project,
+            initial["conversation_id"],
+            "hola",
+            {"message": "hola Leo"},
+        )
+
+        archived = self.client.post(
+            "/api/projects/Mi%20Peque%C3%B1o%20Sol/chat/archive"
+        ).json()
+        self.assertEqual(archived["history"], [])
+        self.assertEqual(len(archived["archives"]), 1)
+        self.assertNotEqual(archived["conversation_id"], initial["conversation_id"])
+
+        archive_id = archived["archives"][0]["archive_id"]
+        restored = self.client.post(
+            f"/api/projects/Mi%20Peque%C3%B1o%20Sol/chat/archives/{archive_id}/restore"
+        ).json()
+        self.assertEqual([item["content"] for item in restored["history"]], ["hola", "hola Leo"])
+        self.assertEqual(restored["archives"], [])
+
+        cleared = self.client.delete(
+            "/api/projects/Mi%20Peque%C3%B1o%20Sol/chat/history"
+        ).json()
+        self.assertEqual(cleared["history"], [])
+        self.assertEqual(cleared["archives"], [])
 
     def test_capability_map_is_available_without_reaper(self):
         response = self.client.get("/api/capabilities")

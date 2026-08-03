@@ -73,7 +73,7 @@
       </section>
 
       <aside class="assistant-panel">
-        <div class="assistant-title"><span>✦</span><h2>Productor IA</h2><button class="icon-button">⋮</button></div>
+        <div class="assistant-title"><span>✦</span><h2>Productor IA</h2><div class="chat-menu-wrap"><button class="icon-button" id="chat-menu-toggle" title="Opciones del chat" aria-expanded="false">⋮</button><div class="chat-menu" id="chat-menu" hidden><button type="button" id="new-chat">＋ Nuevo chat</button><button type="button" id="archive-chat">▣ Archivar conversación</button><button type="button" id="show-chat-archives">◷ Conversaciones archivadas</button><button type="button" class="danger" id="clear-chat">× Borrar conversación actual</button></div></div></div>
         <div class="compact-project-summary compact-only"><strong id="compact-project-title">Cargando proyecto…</strong><span id="compact-project-meta">—</span></div>
         <div class="messages" id="messages">
           <article class="message assistant-message welcome-message">
@@ -113,6 +113,13 @@
       <div class="modal-heading"><div><span class="eyebrow">Biblioteca local</span><h2>Canciones</h2></div><button type="button" class="close-dialog">×</button></div>
       <div class="song-library" id="song-library-list"><div class="empty-state">Cargando canciones…</div></div>
       <div class="modal-actions"><button type="button" class="primary-button" id="library-new-song">＋ Nueva canción</button></div>
+    </section>
+  </dialog>
+
+  <dialog id="chat-archives-dialog">
+    <section class="modal-card">
+      <div class="modal-heading"><div><span class="eyebrow">Memoria por canción</span><h2>Conversaciones archivadas</h2></div><button type="button" class="close-dialog">×</button></div>
+      <div class="chat-archive-list" id="chat-archive-list"><div class="empty-state">No hay conversaciones archivadas.</div></div>
     </section>
   </dialog>
 

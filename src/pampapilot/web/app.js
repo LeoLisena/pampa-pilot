@@ -1,4 +1,4 @@
-const state = { project: null, projects: [], history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
+const state = { project: null, projects: [], history: [], archives: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
 const $ = (selector) => document.querySelector(selector);
 const pageParameters = new URLSearchParams(window.location.search);
 const compactMode = pageParameters.get('compact') === '1';
@@ -49,6 +49,31 @@ function saveChatHistory() {
   localStorage.setItem(chatHistoryKey(state.project.name), JSON.stringify(state.history.slice(-100)));
 }
 
+function rememberConversationId(projectName, conversationId) {
+  if (!projectName || !conversationId) return;
+  let conversations = {};
+  try { conversations = JSON.parse(localStorage.getItem('pampapilot.conversations') || '{}'); } catch { conversations = {}; }
+  conversations[projectName] = conversationId;
+  localStorage.setItem('pampapilot.conversations', JSON.stringify(conversations));
+}
+
+function applySharedChatState(shared) {
+  if (!state.project) return;
+  const history = Array.isArray(shared.history) ? shared.history : [];
+  const currentSignature = JSON.stringify(state.history);
+  const sharedSignature = JSON.stringify(history);
+  if (currentSignature !== sharedSignature) {
+    state.history = history;
+    renderChatHistory();
+    localStorage.setItem(chatHistoryKey(state.project.name), sharedSignature);
+  }
+  if (typeof shared.conversation_id === 'string' && shared.conversation_id) {
+    state.conversationId = shared.conversation_id;
+    rememberConversationId(state.project.name, shared.conversation_id);
+  }
+  state.archives = Array.isArray(shared.archives) ? shared.archives : [];
+}
+
 function renderChatHistory() {
   const messages = $('#messages');
   messages.innerHTML = '';
@@ -65,20 +90,98 @@ async function refreshSharedChatState() {
   try {
     const shared = await api(`/api/projects/${encodeURIComponent(projectName)}/chat-state`);
     if (state.project?.name !== projectName) return;
-    const history = Array.isArray(shared.history) ? shared.history : [];
-    const currentSignature = JSON.stringify(state.history);
-    const sharedSignature = JSON.stringify(history);
-    if (currentSignature !== sharedSignature) {
-      state.history = history;
-      renderChatHistory();
-      localStorage.setItem(chatHistoryKey(projectName), sharedSignature);
-    }
+    applySharedChatState(shared);
     if (document.activeElement !== $('#reasoning-mode') && ['auto', 'fast', 'deep'].includes(shared.reasoning_mode)) {
       $('#reasoning-mode').value = shared.reasoning_mode;
       localStorage.setItem('pampapilot.reasoningMode', shared.reasoning_mode);
     }
   } catch { /* The local cache remains available while the server restarts. */ }
 }
+
+function closeChatMenu() {
+  $('#chat-menu').hidden = true;
+  $('#chat-menu-toggle').setAttribute('aria-expanded', 'false');
+}
+
+async function changeActiveChat(path, options, successMessage) {
+  if (!state.project) return;
+  const shared = await api(
+    `/api/projects/${encodeURIComponent(state.project.name)}/chat/${path}`,
+    options
+  );
+  applySharedChatState(shared);
+  renderProposal(null);
+  closeChatMenu();
+  toast(successMessage);
+}
+
+function renderChatArchives() {
+  const list = $('#chat-archive-list');
+  list.innerHTML = '';
+  if (!state.archives.length) {
+    list.innerHTML = '<div class="empty-state">No hay conversaciones archivadas para esta canción.</div>';
+    return;
+  }
+  state.archives.forEach(archive => {
+    const card = document.createElement('div');
+    card.className = 'chat-archive-card';
+    const date = archive.archived_at ? new Date(archive.archived_at).toLocaleString() : 'Fecha desconocida';
+    card.innerHTML = `<span><strong>${escapeHtml(archive.title || 'Conversación')}</strong><small>${escapeHtml(date)} · ${Number(archive.message_count || 0)} mensajes</small></span><button type="button">Restaurar</button>`;
+    card.querySelector('button').addEventListener('click', async () => {
+      try {
+        const shared = await api(
+          `/api/projects/${encodeURIComponent(state.project.name)}/chat/archives/${encodeURIComponent(archive.archive_id)}/restore`,
+          {method: 'POST'}
+        );
+        applySharedChatState(shared);
+        renderProposal(null);
+        $('#chat-archives-dialog').close();
+        toast('Conversación restaurada.');
+      } catch (error) { toast(error.message); }
+    });
+    list.appendChild(card);
+  });
+}
+
+$('#chat-menu-toggle').addEventListener('click', event => {
+  event.stopPropagation();
+  const menu = $('#chat-menu');
+  menu.hidden = !menu.hidden;
+  event.currentTarget.setAttribute('aria-expanded', String(!menu.hidden));
+});
+$('#chat-menu').addEventListener('click', event => event.stopPropagation());
+document.addEventListener('click', closeChatMenu);
+
+$('#new-chat').addEventListener('click', async () => {
+  try {
+    await changeActiveChat('new', {method: 'POST'}, 'Nuevo chat iniciado; el anterior quedó archivado.');
+  } catch (error) { toast(error.message); }
+});
+
+$('#archive-chat').addEventListener('click', async () => {
+  if (!state.history.length) return toast('La conversación actual está vacía.');
+  try {
+    await changeActiveChat('archive', {method: 'POST'}, 'Conversación archivada.');
+  } catch (error) { toast(error.message); }
+});
+
+$('#show-chat-archives').addEventListener('click', async () => {
+  try {
+    await refreshSharedChatState();
+    renderChatArchives();
+    closeChatMenu();
+    $('#chat-archives-dialog').showModal();
+  } catch (error) { toast(error.message); }
+});
+
+$('#clear-chat').addEventListener('click', async () => {
+  closeChatMenu();
+  if (!state.history.length) return;
+  if (!window.confirm('¿Borrar definitivamente la conversación actual? No se archivará.')) return;
+  try {
+    await changeActiveChat('history', {method: 'DELETE'}, 'Conversación actual borrada.');
+  } catch (error) { toast(error.message); }
+});
 
 async function refreshStatus() {
   try {
@@ -101,9 +204,9 @@ function renderProject(project) {
     let conversations = {};
     try { conversations = JSON.parse(localStorage.getItem('pampapilot.conversations') || '{}'); } catch { conversations = {}; }
     state.conversationId = conversations[project.name] || crypto.randomUUID();
-    conversations[project.name] = state.conversationId;
-    localStorage.setItem('pampapilot.conversations', JSON.stringify(conversations));
+    rememberConversationId(project.name, state.conversationId);
     state.history = loadChatHistory(project.name);
+    state.archives = [];
   }
   state.project = project;
   if (projectChanged) renderChatHistory();
