@@ -267,6 +267,40 @@ class WebServerTests(unittest.TestCase):
         proposal = response.json()["proposal"]
         self.assertTrue(proposal["executable"])
         self.assertEqual(proposal["status"], "pending")
+        self.assertEqual(chat.call_args.kwargs["reasoning"], "on")
+
+    @patch("pampapilot.web_server.LMStudioClient.chat_result")
+    @patch("pampapilot.web_server.build_project_context")
+    def test_direct_action_retries_malformed_model_json(self, context, chat):
+        from pampapilot.lmstudio_client import LMStudioChatResult
+
+        context.return_value = {
+            "song": {"title": "Test"},
+            "stems": [{"name": "1 Percussion", "role": "percussion"}],
+        }
+        chat.side_effect = [
+            LMStudioChatResult('```json\n{"message":"paneo","actions":[', "broken", {}),
+            LMStudioChatResult(
+                '{"message":"Preparé el paneo","proposal":null,"actions":[]}',
+                "repaired",
+                {},
+            ),
+        ]
+
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "project_name": "Test",
+                "message": "paneá la percu a la izquierda",
+                "history": [],
+                "conversation_id": "repair-json-test",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["message"], "Preparé el paneo")
+        self.assertEqual(chat.call_count, 2)
+        self.assertEqual(chat.call_args_list[1].kwargs["previous_response_id"], "broken")
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")

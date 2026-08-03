@@ -187,7 +187,9 @@ REAPER permanece visible. El historial visible y el modo de razonamiento se
 guardan en el servidor local y se comparten por canción entre la ventana
 completa y la compacta, incluso si usan perfiles de navegador distintos. El
 selector de razonamiento permite usar modo
-automático, rápido sin razonamiento o profundo; esta elección sólo configura al
+automático (razona ante órdenes que modifican REAPER), rápido sin razonamiento o
+profundo; una respuesta de acción con JSON incompleto se solicita nuevamente al
+modelo y nunca se ejecuta parcialmente. Esta elección sólo configura al
 proveedor activo y no forma parte del contrato de acciones de REAPER.
 
 Para abrir la interfaz desde otro equipo de la LAN use

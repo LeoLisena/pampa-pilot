@@ -2216,14 +2216,15 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             messages = [{"role": "user", "content": value.message}]
         use_reasoning = value.reasoning_mode == "deep" or (
             value.reasoning_mode == "auto"
-            and deep_context
-            and not direct_action
-            and request_needs_reasoning(value.message)
+            and (
+                direct_action
+                or (deep_context and request_needs_reasoning(value.message))
+            )
         )
         result = await asyncio.to_thread(
             LMStudioClient(runtime.brain()).chat_result,
             messages,
-            max_tokens=1200 if direct_action else 900 if use_reasoning else 450 if deep_context else 220,
+            max_tokens=1600 if direct_action else 900 if use_reasoning else 450 if deep_context else 220,
             reasoning="on" if use_reasoning else "off",
             previous_response_id=None
             if conversation is None
@@ -2231,6 +2232,38 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             store=True,
         )
         response = parse_agent_response(result.content)
+        if direct_action and not response.get("structured"):
+            repair = await asyncio.to_thread(
+                LMStudioClient(runtime.brain()).chat_result,
+                [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Tu respuesta anterior quedó incompleta o no fue JSON válido. "
+                            "Repetí la misma decisión como un único objeto JSON válido, sin Markdown, "
+                            "respetando exactamente el contrato de actions y los nombres de stems del contexto."
+                        ),
+                    }
+                ],
+                max_tokens=1600,
+                reasoning="on" if use_reasoning else "off",
+                previous_response_id=result.response_id,
+                store=True,
+            )
+            repaired_response = parse_agent_response(repair.content)
+            if repaired_response.get("structured"):
+                result = repair
+                response = repaired_response
+            else:
+                response = {
+                    "message": (
+                        "El modelo no pudo devolver una orden estructurada válida. "
+                        "No se aplicó ningún cambio en REAPER."
+                    ),
+                    "proposal": None,
+                    "actions": [],
+                    "structured": False,
+                }
         response["context_level"] = context_level
         response["reasoning_mode"] = value.reasoning_mode
         response["reasoning_used"] = use_reasoning
