@@ -81,8 +81,10 @@ El plan cruza los FX existentes, conserva los ajenos y bloquea ambigüedades.
 El puente 0.25.0 agrega la preparación A/B: renderiza el mix antes y después de
 la cadena, restaura los ajustes de render tras cada archivo y crea copias WAV
 igualadas por LUFS mediante atenuación. La decisión sonora sigue siendo humana.
-El puente 0.26.0 interpreta letras estructuradas, estima límites desde el audio
-y puede mostrar secciones coloreadas como regiones reversibles en REAPER.
+El puente 0.26.1 interpreta letras estructuradas y muestra regiones reversibles.
+El motor 0.2 fusiona downbeats/modelo especialista, análisis por compás de todos
+los stems, consenso por rol y repetición musical; esas métricas quedan separadas
+para reutilizarlas en otras decisiones de productor.
 
 ## Decisiones iniciales
 
@@ -107,6 +109,9 @@ La materialización MIDI verificable está en
 [docs/midi-import.md](docs/midi-import.md).
 La estrategia híbrida de procesamiento por stem está en
 [docs/song-processing-strategy.md](docs/song-processing-strategy.md).
+El análisis temporal reutilizable está en
+[docs/timeline-analysis.md](docs/timeline-analysis.md) y su aplicación a
+secciones en [docs/song-structure.md](docs/song-structure.md).
 El control offline del master para distribución está en
 [docs/master-delivery-qc.md](docs/master-delivery-qc.md).
 El limitador de mastering supervisado está en

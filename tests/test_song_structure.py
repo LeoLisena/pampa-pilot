@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import numpy as np
 import pytest
@@ -36,6 +37,29 @@ def test_parser_keeps_structure_and_separates_arrangement_notes(tmp_path: Path) 
     ]
     assert parsed["sections"][0]["arrangement_notes"] == ["Soft guitar"]
     assert parsed["sections"][2]["lyrics_text"] == "Sol[Full band]"
+
+
+def test_lyrics_quality_prefers_clean_repeated_sections_and_downgrades_damage(
+    tmp_path: Path,
+) -> None:
+    clean, damaged = tmp_path / "clean.txt", tmp_path / "damaged.txt"
+    clean.write_text(
+        "[Verse 1]\nUna línea\n[Pre-Chorus]\nSube la voz\n"
+        "[Chorus]\nSoltá mi sombra\n[Verse 2]\nOtra línea\n"
+        "[Pre-Chorus]\nSube la voz\n[Chorus]\nSoltá mi sombra\n",
+        encoding="utf-8",
+    )
+    damaged.write_text(
+        "[Verse 1]\nUna línea\n[Pre-Chorus]\nSube la voz\n"
+        "[Chorus]\nSol Sol sombrasombra [Full band]\n[Verse 2]\nOtra línea\n"
+        "[Pre-Chorus]\nSube la voz\n[Chorus]\nvo zzz zzz cantarrrcantarrr\n",
+        encoding="utf-8",
+    )
+
+    assert parse_structured_lyrics(clean)["quality"]["profile"] == "clean"
+    damaged_quality = parse_structured_lyrics(damaged)["quality"]
+    assert damaged_quality["profile"] != "clean"
+    assert damaged_quality["overall_score"] < 0.85
 
 
 def test_structure_proposal_is_contiguous_and_approval_bound(tmp_path: Path) -> None:
@@ -78,3 +102,87 @@ def test_vocal_stem_anchors_intro_end_to_first_sustained_voice(tmp_path: Path) -
 
     assert proposal["timing_evidence"]["first_sustained_vocal_start_seconds"] == pytest.approx(6.1)
     assert proposal["regions"][0]["end_seconds"] == pytest.approx(6.0)
+
+
+def test_ensemble_uses_specialist_macro_anchors_and_repeated_pre_choruses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio, lyrics, specialist = (
+        tmp_path / "mix.wav",
+        tmp_path / "lyrics.txt",
+        tmp_path / "specialist.json",
+    )
+    _write_audio(audio)
+    lyrics.write_text(
+        "[Intro]\n[Verse 1]\na\nb\nc\nd\n[Pre-Chorus]\ne\nf\ng\nh\n"
+        "[Chorus]\ni\n[Verse 2]\na\nb\nc\nd\n[Pre-Chorus]\ne\nf\ng\nh\n"
+        "[Chorus]\ni\n[Bridge]\nj\n[Final Chorus]\nk\n[Outro]\nl\n",
+        encoding="utf-8",
+    )
+    segments = [
+        (0, 4, "inst"), (4, 16, "verse"), (16, 24, "chorus"),
+        (24, 36, "verse"), (36, 44, "chorus"), (44, 52, "inst"),
+        (52, 56, "verse"), (56, 64, "chorus"), (64, 68, "inst"),
+    ]
+    specialist.write_text(
+        json.dumps(
+            {
+                "bpm": 120,
+                "downbeats": list(range(1, 68)),
+                "segments": [
+                    {"start": start, "end": end, "label": label}
+                    for start, end, label in segments
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    interval_count = 68
+    embedding = np.zeros((interval_count, 18), dtype=float).tolist()
+    evidence = []
+    for second in range(1, 68):
+        strong = second in {12, 32}
+        evidence.append(
+            {
+                "time_seconds": float(second),
+                "multistem_change": 2.0 if strong else 0.2,
+                "change_consensus": 0.8 if strong else 0.1,
+                "role_changes": {"drums": 1.0},
+                "role_energy_delta_db": {
+                    "drums": 8.0 if strong else 0.0,
+                    "bass": 8.0 if strong else 0.0,
+                    "lead_vocal": 4.0 if strong else 0.0,
+                },
+            }
+        )
+    timeline = {
+        "analysis_version": "test",
+        "bpm": 120,
+        "duration_seconds": 68.0,
+        "grid_source": "external_downbeats",
+        "interval_boundaries_seconds": [float(value) for value in range(69)],
+        "stems": [
+            {"role": role, "standardized_embedding": embedding}
+            for role in ("drums", "bass", "keys", "guitar", "lead_vocal", "backing_vocals")
+        ],
+        "boundary_evidence": evidence,
+        "reuse_contract": {"observations_not_mix_decisions": True},
+    }
+    monkeypatch.setattr("pampapilot.song_structure.analyze_music_timeline", lambda *a, **k: timeline)
+
+    proposal = build_song_structure_proposal(
+        audio,
+        lyrics,
+        bpm=120,
+        stem_paths=[audio],
+        specialist_analysis_path=specialist,
+    )
+
+    starts = {region["label"]: region["start_seconds"] for region in proposal["regions"]}
+    assert starts["Verse 1"] == 4
+    assert starts["Verse 2"] == 24
+    assert [region["start_seconds"] for region in proposal["regions"] if region["kind"] == "pre_chorus"] == [12, 32]
+    assert starts["Bridge"] == 44
+    assert starts["Final Chorus"] == 56
+    assert starts["Outro"] == 64
+    assert proposal["timing_evidence"]["timeline_summary"]["stem_count"] == 6

@@ -1,40 +1,75 @@
-# Estructura de canción guiada por letra
+# Estructura de canción guiada por letra y stems
 
-PampaPilot 0.26.0 acepta una letra `.txt` opcional junto a los stems. Las
-etiquetas reconocidas (`Intro`, `Verse`, `Pre-Chorus`, `Chorus`, `Bridge`,
-`Final Chorus`, `Outro` y equivalentes en español) determinan el orden y los
-nombres. Las restantes líneas completas entre corchetes se conservan como
-notas de arreglo; el texto libre se conserva como letra aunque esté repetido o
-corrupto por una regeneración de Suno.
+El motor 0.2 separa dos responsabilidades. `timeline_analysis` mide cada stem
+alineado por compás; `song_structure` consume esas observaciones para proponer
+regiones. El análisis no depende de REAPER y puede reutilizarse después para
+balance, dinámica, EQ, silencios, automatización y diagnóstico.
 
-La letra no fija tiempos. El motor analiza cambios de energía, ataques, centro
-espectral, ancho espectral y armonía del mix. Combina esa novedad con una forma
-temporal previa según cada clase de sección y, cuando hay BPM, evalúa candidatos
-sobre la grilla de compases. La propuesta contiene hashes de ambos archivos,
-versión del algoritmo, evidencia por límite y un `structure_id` determinista.
+Las etiquetas reconocidas en la letra (`Intro`, `Verse`, `Pre-Chorus`,
+`Chorus`, `Bridge`, `Final Chorus`, `Outro` y equivalentes en español) fijan el
+orden semántico. Las notas entre corchetes se conservan como intención de
+arreglo y la letra libre se conserva incluso si Suno la regeneró con palabras
+duplicadas o dañadas. La letra orienta; nunca inventa timestamps.
 
-Cuando se proporciona el stem vocal, el primer bloque vocal sostenido ancla el
-final de una `Intro` sobre la grilla de compases. Esto evita que una transición
-instrumental temprana se confunda con el comienzo de la primera estrofa.
+El parser clasifica cada entrada como `clean`, `uncertain` o `damaged`. La ruta
+normal, optimizada para letras limpias, usa cantidad de frases y consistencia
+textual entre precoros/estribillos repetidos. Si detecta duplicaciones, fragmentos
+pegados o repeticiones incoherentes, desactiva esa confianza léxica y conserva
+sólo la secuencia de tags; el audio pasa a dominar el timing.
 
-`preview_song_structure` nunca modifica REAPER. Tras aprobación,
-`apply_project_song_structure` recalcula la propuesta y crea regiones contiguas
-con nombres limpios, colores por función y lectura posterior exacta. Una marca
-Unicode invisible conserva la identidad técnica sin ocupar espacio visual. Al
-recalcular puede reemplazar exclusivamente regiones propias anteriores; no
-borra marcadores del usuario y agrupa todo en una única transacción undo.
+## Evidencia temporal
 
-Los nombres y el orden tienen evidencia explícita de la letra. Los tiempos son
-estimaciones y requieren revisión visual/auditiva; el motor nunca declara una
-evaluación perceptual automática.
+La ruta de máxima precisión combina:
+
+1. downbeats y macrosegmentos de un especialista externo compatible;
+2. energía, ataques, centro/ancho/rolloff espectral, actividad y chroma de cada
+   stem por intervalo musical;
+3. consenso de cambios entre voz principal, coros, batería, bajo e instrumentos
+   armónicos;
+4. autosimilitud entre secciones repetidas, especialmente los dos precoros y
+   las dos estrofas;
+5. restricciones de factibilidad derivadas de las frases de la letra: por
+   ejemplo, cuatro líneas de precoro no pueden colapsar en dos compases por un
+   fill aislado.
+
+El modelo externo es una segunda opinión de sólo lectura. Sus pesos y binarios
+no forman parte de PampaPilot y el flujo básico continúa funcionando sin ellos.
+Los especialistas jamás escriben en REAPER; sólo el adaptador Lua autorizado
+puede materializar una propuesta aprobada.
+
+Cada límite devuelve fuente, confianza, consenso multistem, cambios por rol y
+detalles de selección. `structure_id` incluye hashes de audio, letra, stems,
+análisis especialista y versión del algoritmo, por lo que una aprobación vieja
+no puede aplicarse silenciosamente a evidencia nueva.
+
+## Aplicación y seguridad
+
+`preview_song_structure` nunca modifica REAPER. `apply_project_song_structure`
+recalcula la propuesta aprobada y crea regiones contiguas, coloreadas y
+reversibles. Una marca Unicode invisible conserva identidad técnica sin ensuciar
+el nombre visible. Al recalcular sólo reemplaza regiones propias anteriores;
+conserva los marcadores del usuario y agrupa la operación en una transacción
+undo.
 
 ## Mi Pequeño Sol
 
-`lyric.txt` produjo diez secciones válidas pese a la corrupción de varias
-palabras: Intro, Verse 1, Pre-Chorus, Chorus, Verse 2, Pre-Chorus, Chorus,
-Bridge, Final Chorus y Outro. Sobre el render del proyecto a 85 BPM, la propuesta
-La primera propuesta evidenció un límite incorrecto de Intro al usar sólo el
-mix. El stem `10 Vocals.wav` midió su primera voz sostenida a 26,2 s y la
-propuesta corregida `cc11da6a89881c49ed00a082` fijó `Intro → Verse 1` a
-25,412 s, sobre la grilla de 85 BPM. Los demás límites permanecen entre 42,353 s
-y 223,059 s. La sustitución visual en REAPER continúa pendiente de validación.
+La letra declara diez secciones. All-In-One ONNX detectó 85 BPM, downbeats y los
+cambios macro. El análisis de los doce stems y la repetición entre ciclos
+produjeron la propuesta limpia `511c8d6bcae7dfadf02e77c2`:
+
+| Sección | Inicio (s) | Evidencia principal |
+|---|---:|---|
+| Intro | 0.00 | inicio |
+| Verse 1 | 26.01 | voz + especialista |
+| Pre-Chorus | 45.76 | transición rítmica + repetición |
+| Chorus | 59.88 | especialista + entrada de coros |
+| Verse 2 | 93.77 | especialista |
+| Pre-Chorus | 110.71 | repetición + transición multistem |
+| Chorus | 127.65 | especialista + coros |
+| Bridge | 150.24 | salida del segundo chorus |
+| Final Chorus | 186.93 | especialista |
+| Outro | 220.82 | salida del final chorus + caída vocal |
+
+Los nombres y el orden tienen evidencia explícita de la letra; los tiempos son
+estimaciones de alta confianza, no una escucha humana. La revisión visual y
+auditiva sigue siendo la validación final.

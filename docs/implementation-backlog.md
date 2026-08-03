@@ -153,6 +153,11 @@ Referencias de diseño para carga genérica de presets:
 - [ ] Clasificación fiable de fuente: Suno, grabación orgánica o desconocida.
 - [ ] Detección de tonalidad y acordes combinando MIDI y audio.
 - [x] Análisis de estructura guiado por letra opcional y temporizado por audio.
+- [x] Motor temporal reutilizable por stem/compás con consenso por rol.
+- [x] Fusión opcional de downbeats y macrosegmentos de especialista externo.
+- [x] Autosimilitud conjunta de precoros/estrofas con restricciones de fraseo.
+- [x] Perfiles de letra limpia/dañada; la ruta limpia es el comportamiento
+      principal y la tolerancia a corrupción de Suno es un fallback.
 - [ ] Validar visualmente en REAPER las regiones de `Mi Pequeño Sol` y ajustar
       manualmente cualquier límite que no coincida con la escucha.
 - [ ] Evaluación de balance espectral y dinámica frente a referencia, con

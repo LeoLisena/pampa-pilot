@@ -887,13 +887,31 @@ def preview_song_structure(
     lyrics_path: Annotated[str, Field(min_length=1, max_length=4096)],
     bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
     vocal_path: Annotated[str | None, Field(min_length=1, max_length=4096)] = None,
+    stem_paths: list[str] | None = None,
+    specialist_analysis_path: Annotated[
+        str | None, Field(min_length=1, max_length=4096)
+    ] = None,
 ) -> dict[str, Any]:
-    """Usa etiquetas de la letra como orden y el audio para estimar los límites."""
+    """Fusiona letra, stems y un especialista opcional para estimar los límites."""
 
     audio = resolve_input_file(audio_path, suffixes={".wav", ".flac"})
     lyrics = resolve_input_file(lyrics_path, suffixes={".txt"})
     vocal = resolve_input_file(vocal_path, suffixes={".wav", ".flac"}) if vocal_path else None
-    return build_song_structure_proposal(audio, lyrics, bpm=bpm, vocal_path=vocal)
+    stems = [
+        resolve_input_file(path, suffixes={".wav", ".flac"}) for path in (stem_paths or [])
+    ]
+    specialist = (
+        resolve_input_file(specialist_analysis_path, suffixes={".json"})
+        if specialist_analysis_path else None
+    )
+    return build_song_structure_proposal(
+        audio,
+        lyrics,
+        bpm=bpm,
+        vocal_path=vocal,
+        stem_paths=stems,
+        specialist_analysis_path=specialist,
+    )
 
 
 @mcp.tool(
@@ -912,13 +930,31 @@ def apply_project_song_structure(
     approved_structure_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
     bpm: Annotated[float | None, Field(ge=20.0, le=400.0)] = None,
     vocal_path: Annotated[str | None, Field(min_length=1, max_length=4096)] = None,
+    stem_paths: list[str] | None = None,
+    specialist_analysis_path: Annotated[
+        str | None, Field(min_length=1, max_length=4096)
+    ] = None,
 ) -> dict[str, Any]:
     """Recalcula la propuesta y crea todas sus regiones en una única transacción."""
 
     audio = resolve_input_file(audio_path, suffixes={".wav", ".flac"})
     lyrics = resolve_input_file(lyrics_path, suffixes={".txt"})
     vocal = resolve_input_file(vocal_path, suffixes={".wav", ".flac"}) if vocal_path else None
-    proposal = build_song_structure_proposal(audio, lyrics, bpm=bpm, vocal_path=vocal)
+    stems = [
+        resolve_input_file(path, suffixes={".wav", ".flac"}) for path in (stem_paths or [])
+    ]
+    specialist = (
+        resolve_input_file(specialist_analysis_path, suffixes={".json"})
+        if specialist_analysis_path else None
+    )
+    proposal = build_song_structure_proposal(
+        audio,
+        lyrics,
+        bpm=bpm,
+        vocal_path=vocal,
+        stem_paths=stems,
+        specialist_analysis_path=specialist,
+    )
     payload = build_structure_region_payload(proposal, approved_structure_id)
     reply = _call(
         "apply_song_structure_regions",
