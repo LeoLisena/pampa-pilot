@@ -169,6 +169,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Importa varios WAV como una única transacción verificable.",
         ),
         ActionSpec(
+            "reorder_audio_tracks_by_source",
+            True,
+            VerificationLevel.STATE,
+            "Reordena stems existentes por la ruta real de su fuente y relee el resultado.",
+        ),
+        ActionSpec(
             "import_midi",
             True,
             VerificationLevel.STATE,

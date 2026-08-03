@@ -148,6 +148,7 @@ class WebServerTests(unittest.TestCase):
                     "create_song_project": {"project_ref": "song-ref"},
                     "get_track_items": {"items": []},
                     "import_audio_batch": {"imported_count": 1},
+                    "reorder_audio_tracks_by_source": {"reordered_count": 1},
                     "set_project_tempo": {"tempo_bpm": 85},
                     "save_project_as": {"track_count": 1},
                 }
@@ -170,7 +171,7 @@ class WebServerTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["imported_count"], 1)
             actions = [entry.args[0] for entry in client.call.call_args_list]
-            self.assertEqual(actions, ["create_song_project", "import_audio_batch", "set_project_tempo", "save_project_as"])
+            self.assertEqual(actions, ["create_song_project", "import_audio_batch", "reorder_audio_tracks_by_source", "set_project_tempo", "save_project_as"])
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")

@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.29.1"
+local BRIDGE_VERSION = "0.29.2"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -3891,6 +3891,72 @@ function ACTIONS.import_audio_batch(params, request_id)
       project_ref = ref,
       imported_count = #imports,
       imports = imports,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+local function track_contains_audio_source(track, normalized_source_path)
+  for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+    local item = reaper.GetTrackMediaItem(track, item_index)
+    local take = item and reaper.GetActiveTake(item) or nil
+    if take and not reaper.TakeIsMIDI(take) then
+      local source = reaper.GetMediaItemTake_Source(take)
+      local source_path = source and reaper.GetMediaSourceFileName(source) or ""
+      if source_path ~= "" and normalized_absolute_path(source_path, "source_path")
+          == normalized_source_path then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+function ACTIONS.reorder_audio_tracks_by_source(params, request_id)
+  local project, _, ref = require_project(params)
+  if type(params.source_paths) ~= "table" then error("source_paths debe ser un arreglo") end
+  if #params.source_paths < 1 or #params.source_paths > 64 then
+    error("source_paths debe contener entre 1 y 64 rutas")
+  end
+  local sources, seen = {}, {}
+  for index, raw_path in ipairs(params.source_paths) do
+    local path = require_allowed_audio_path(raw_path)
+    local normalized = normalized_absolute_path(path, "file_path")
+    if seen[normalized] then error("source_paths contiene un archivo duplicado") end
+    seen[normalized] = true
+    sources[index] = normalized
+  end
+  local function unique_track_for_source(normalized)
+    local match = nil
+    for track_index = 0, reaper.CountTracks(project) - 1 do
+      local track = reaper.GetTrack(project, track_index)
+      if track_contains_audio_source(track, normalized) then
+        if match then error("una fuente está presente en más de una pista") end
+        match = track
+      end
+    end
+    if not match then error("no existe una pista para una de las fuentes solicitadas") end
+    return match
+  end
+  local result = run_transaction(project, request_id, "reordenar stems", function()
+    for desired_index, normalized in ipairs(sources) do
+      local track = unique_track_for_source(normalized)
+      reaper.SetOnlyTrackSelected(track)
+      reaper.ReorderSelectedTracks(desired_index - 1, 0)
+    end
+    local ordered_tracks = {}
+    for index, normalized in ipairs(sources) do
+      local track = reaper.GetTrack(project, index - 1)
+      if not track or not track_contains_audio_source(track, normalized) then
+        error("la lectura posterior del orden no coincide")
+      end
+      ordered_tracks[index] = read_track(track, index - 1)
+    end
+    return {
+      project_ref = ref,
+      reordered_count = #ordered_tracks,
+      tracks = ordered_tracks,
       transaction_request_id = request_id,
     }
   end)

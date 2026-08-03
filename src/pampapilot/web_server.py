@@ -2033,6 +2033,16 @@ async def sync_project_to_reaper(project_name: str) -> dict[str, Any]:
                 },
                 timeout_seconds=60.0,
             )
+        if stems:
+            await asyncio.to_thread(
+                client.call,
+                "reorder_audio_tracks_by_source",
+                {
+                    "project_ref": project_ref,
+                    "source_paths": [str(path) for path in stems],
+                },
+                timeout_seconds=30.0,
+            )
         await asyncio.to_thread(
             client.call,
             "set_project_tempo",
