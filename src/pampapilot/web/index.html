@@ -13,9 +13,9 @@
       <nav class="nav-list" aria-label="Navegación principal">
         <button class="nav-item active" data-view="home"><span>⌂</span>Inicio</button>
         <button class="nav-item" data-view="songs"><span>♫</span>Canciones</button>
-        <button class="nav-item" data-view="project"><span>☷</span>Proyecto</button>
+        <button class="nav-item" data-view="project" id="open-capabilities"><span>☷</span>Herramientas</button>
         <button class="nav-item" data-view="chat"><span>◌</span>Chat</button>
-        <button class="nav-item" data-view="activity"><span>⌁</span>Actividad</button>
+        <button class="nav-item" data-view="activity" id="open-activity"><span>⌁</span>Actividad</button>
         <button class="nav-item" id="open-settings"><span>⚙</span>Configuración</button>
       </nav>
       <div class="quick-actions">
@@ -56,7 +56,7 @@
         </section>
 
         <section class="panel stems-panel">
-          <div class="panel-title"><h2>Stems del proyecto</h2><button class="icon-button" title="Clasificar stems">☷</button></div>
+          <div class="panel-title"><h2>Stems del proyecto</h2><button class="icon-button" id="open-capabilities-stems" title="Ver herramientas">☷</button></div>
           <div class="stem-header"><span>Stem</span><span>Origen</span><span>Estado</span><span>Problemas</span><span></span></div>
           <div id="stem-list"><div class="empty-state">Cargando stems…</div></div>
         </section>
@@ -123,6 +123,54 @@
     <section class="modal-card wide-modal analysis-modal">
       <div class="modal-heading"><div><span class="eyebrow">Evidencia determinista</span><h2>Diagnóstico técnico</h2></div><button type="button" class="close-dialog">×</button></div>
       <div id="analysis-detail-content"></div>
+      <div class="modal-actions"><button type="button" class="primary-button close-dialog">Cerrar</button></div>
+    </section>
+  </dialog>
+
+  <dialog id="stem-tools-dialog">
+    <section class="modal-card wide-modal">
+      <div class="modal-heading"><div><span class="eyebrow">Control determinista</span><h2 id="stem-tools-title">Herramientas de pista</h2></div><button type="button" class="close-dialog">×</button></div>
+      <div class="tool-status" id="stem-reaper-binding">Consultando REAPER…</div>
+      <div class="tool-section">
+        <h3>1. Procedencia</h3>
+        <p>Define cuán conservadoras serán las recomendaciones. Cambiarla invalida el análisis anterior.</p>
+        <div class="inline-controls"><select id="stem-source-kind"><option value="unknown">Sin clasificar</option><option value="suno_stems">Suno</option><option value="organic_multitrack">Grabación orgánica</option></select><button class="secondary-button" id="save-stem-source">Guardar origen</button></div>
+      </div>
+      <div class="tool-section">
+        <h3>2. Mezcla estática</h3>
+        <p>Ajuste fino reversible. Los stems de Suno conservan sus niveles salvo que vos decidas cambiarlos.</p>
+        <div class="form-grid compact-grid">
+          <label>Volumen dB<input id="stem-volume" type="number" min="-60" max="12" step="0.1" placeholder="Ej. -3"></label>
+          <label>Paneo (-100 a 100)<input id="stem-pan" type="number" min="-100" max="100" step="1" placeholder="0"></label>
+          <label>Mute<select id="stem-muted"><option value="">No cambiar</option><option value="true">Activar</option><option value="false">Desactivar</option></select></label>
+        </div>
+        <div class="inline-controls"><button class="primary-button" id="apply-static-mix">Revisar y aplicar</button><button class="secondary-button" id="toggle-solo">Activar Solo</button></div>
+      </div>
+      <div class="tool-section">
+        <h3>3. Cadena recomendada</h3>
+        <p>Analiza el WAV y propone sólo los filtros justificados por rol y procedencia. Para Suno usa una política más conservadora.</p>
+        <label class="checkbox-field"><input id="include-saturation" type="checkbox"><span>Incluir saturación artística suave</span></label>
+        <div class="inline-controls"><button class="secondary-button" id="preview-chain">Generar propuesta</button><button class="primary-button" id="apply-chain" disabled>Aplicar cadena aprobada</button></div>
+        <div id="chain-preview" class="chain-preview"></div>
+      </div>
+      <p class="form-result" id="stem-tools-result"></p>
+      <div class="modal-actions"><button type="button" class="secondary-button" id="undo-last" disabled>↶ Deshacer última acción</button><button type="button" class="primary-button close-dialog">Cerrar</button></div>
+    </section>
+  </dialog>
+
+  <dialog id="capabilities-dialog">
+    <section class="modal-card wide-modal">
+      <div class="modal-heading"><div><span class="eyebrow">Mapa funcional</span><h2>Qué puede hacer PampaPilot</h2></div><button type="button" class="close-dialog">×</button></div>
+      <p class="analysis-safety">“Disponible en esta pantalla” se puede probar desde cada stem. “Motor listo” ya está implementado y se irá incorporando a pantallas guiadas.</p>
+      <div id="capability-list" class="capability-list"><div class="empty-state">Cargando capacidades…</div></div>
+      <div class="modal-actions"><button type="button" class="primary-button close-dialog">Cerrar</button></div>
+    </section>
+  </dialog>
+
+  <dialog id="activity-dialog">
+    <section class="modal-card wide-modal">
+      <div class="modal-heading"><div><span class="eyebrow">Trazabilidad</span><h2>Actividad de esta sesión</h2></div><button type="button" class="close-dialog">×</button></div>
+      <div id="activity-list" class="activity-list"></div>
       <div class="modal-actions"><button type="button" class="primary-button close-dialog">Cerrar</button></div>
     </section>
   </dialog>

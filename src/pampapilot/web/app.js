@@ -1,4 +1,4 @@
-const state = { project: null, history: [], proposal: null, conversationId: null };
+const state = { project: null, history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, undo: null };
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -78,8 +78,9 @@ function renderProject(project) {
       <span class="badge ${badgeClass}">${escapeHtml(stem.source)}</span>
       <span class="badge ${stem.status === 'Analizado' ? '' : 'neutral'}">${escapeHtml(stem.status)}</span>
       <span class="badge ${stem.problems === 'Sin problemas detectados' ? '' : 'neutral'}">${escapeHtml(stem.problems)}</span>
-      <div class="stem-actions"><button class="play-button" title="Escuchar en REAPER">▶</button><button class="icon-button">⋮</button></div>`;
+      <div class="stem-actions"><button class="play-button" title="Abrir controles de producción">▶</button><button class="icon-button" title="Abrir controles">⋮</button></div>`;
     row.querySelector('.stem-name span:last-child').textContent = stem.name;
+    row.querySelectorAll('.stem-actions button').forEach(button => button.addEventListener('click', () => openStemTools(stem)));
     list.appendChild(row);
   });
   const banner = $('#analysis-banner');
@@ -302,6 +303,172 @@ function renderAnalysisDetails() {
   content.innerHTML = `<p class="analysis-safety">Análisis offline de señal. No modifica REAPER y no reemplaza la escucha humana.</p><div class="analysis-stem-list">${stemCards}</div>`;
 }
 
+const stemToolsDialog = $('#stem-tools-dialog');
+
+function normalizedTrackName(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^\s*\d+[\s._-]*/, '').replace(/[^a-z0-9]/g, '');
+}
+
+function processorLabel(value) {
+  return ({reagate: 'Puerta · ReaGate', reaeq: 'Ecualización · ReaEQ', reacomp: 'Compresión · ReaComp', deesser: 'De-esser · ReaXcomp', dynamic_resonance: 'Resonancia dinámica · ReaXcomp', waveshaper: 'Saturación'})[value] || value;
+}
+
+function reasonLabel(value) {
+  const translated = {
+    'Measured quiet passages support a conservative threshold hypothesis.': 'Los pasajes silenciosos medidos justifican probar un umbral conservador.',
+    'A time-varying spectral prominence supports a broad-band ReaXcomp audition.': 'Una prominencia espectral variable justifica probar un control dinámico amplio.',
+    'Intermittent 5-10 kHz peaks support a high-band compression audition.': 'Los picos intermitentes entre 5 y 10 kHz justifican probar un de-esser suave.'
+  };
+  return translated[value] || value || 'Punto de partida para escuchar en contexto.';
+}
+
+async function openStemTools(stem) {
+  state.selectedStem = stem;
+  state.chain = null;
+  $('#stem-tools-title').textContent = stem.name;
+  $('#stem-source-kind').value = ['suno_stems', 'organic_multitrack', 'unknown'].includes(stem.source_kind) ? stem.source_kind : 'unknown';
+  $('#stem-volume').value = '';
+  $('#stem-pan').value = '';
+  $('#stem-muted').value = '';
+  $('#include-saturation').checked = false;
+  $('#chain-preview').innerHTML = '<p class="analysis-safety">Todavía no se generó una propuesta.</p>';
+  $('#apply-chain').disabled = true;
+  $('#stem-tools-result').textContent = '';
+  $('#stem-reaper-binding').textContent = 'Consultando el proyecto abierto en REAPER…';
+  stemToolsDialog.showModal();
+  stemToolsDialog.querySelector('.modal-card').scrollTop = 0;
+  try {
+    const reply = await api('/api/reaper/project');
+    const wanted = new Set([stem.name, stem.track_name].map(normalizedTrackName));
+    const matches = (reply.result?.tracks || []).filter(track => wanted.has(normalizedTrackName(track.name)));
+    if (matches.length !== 1) throw new Error('No se encontró una coincidencia única');
+    const track = matches[0];
+    state.selectedStem.reaperTrack = track;
+    state.selectedStem.projectRef = reply.result.project_ref;
+    $('#stem-volume').value = Number(track.volume_db || 0).toFixed(1);
+    $('#stem-pan').value = Math.round(Number(track.pan || 0) * 100);
+    $('#stem-muted').value = String(Boolean(track.muted));
+    $('#toggle-solo').textContent = Number(track.solo || 0) > 0 ? 'Desactivar Solo' : 'Activar Solo';
+    $('#stem-reaper-binding').className = 'tool-status connected';
+    $('#stem-reaper-binding').textContent = `Vinculada con REAPER: ${track.name} · ${track.fx_count} FX · los cambios tendrán Undo`;
+  } catch (error) {
+    delete state.selectedStem.reaperTrack;
+    $('#stem-reaper-binding').className = 'tool-status offline';
+    $('#stem-reaper-binding').textContent = 'REAPER/Bridge no está disponible. Podés clasificar y generar propuestas offline; Aplicar queda bloqueado.';
+  }
+}
+
+$('#save-stem-source').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem) return;
+  const result = $('#stem-tools-result');
+  result.textContent = 'Guardando procedencia…';
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/stem-source`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({stem_name: state.selectedStem.name, source_kind: $('#stem-source-kind').value})
+    });
+    renderProject(reply.project);
+    state.selectedStem = reply.project.stems.find(item => item.name === state.selectedStem.name) || state.selectedStem;
+    result.textContent = 'Origen guardado. Volvé a analizar para actualizar el diagnóstico.';
+  } catch (error) { result.textContent = error.message; }
+});
+
+$('#apply-static-mix').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem) return;
+  const volumeRaw = $('#stem-volume').value;
+  const panRaw = $('#stem-pan').value;
+  const mutedRaw = $('#stem-muted').value;
+  const payload = {stem_name: state.selectedStem.name};
+  if (volumeRaw !== '') payload.volume_db = Number(volumeRaw);
+  if (panRaw !== '') payload.pan = Number(panRaw) / 100;
+  if (mutedRaw !== '') payload.muted = mutedRaw === 'true';
+  if (Object.keys(payload).length === 1) return toast('Ingresá al menos un cambio.');
+  if (!window.confirm(`Aplicar en REAPER volumen ${volumeRaw || 'sin cambio'} dB, paneo ${panRaw || 'sin cambio'} y mute ${mutedRaw || 'sin cambio'}?`)) return;
+  const result = $('#stem-tools-result');
+  result.textContent = 'Aplicando y verificando en REAPER…';
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/static-mix/apply`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+    rememberUndo(reply);
+    result.textContent = 'Ajuste aplicado y releído correctamente. Podés deshacerlo.';
+  } catch (error) { result.textContent = error.message; }
+});
+
+$('#toggle-solo').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem) return;
+  const currentlySolo = Number(state.selectedStem.reaperTrack?.solo || 0) > 0;
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/static-mix/apply`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({stem_name: state.selectedStem.name, solo: !currentlySolo})});
+    rememberUndo(reply);
+    state.selectedStem.reaperTrack = {...state.selectedStem.reaperTrack, solo: currentlySolo ? 0 : 1};
+    $('#toggle-solo').textContent = currentlySolo ? 'Activar Solo' : 'Desactivar Solo';
+    $('#stem-tools-result').textContent = 'Solo aplicado y verificado.';
+  } catch (error) { $('#stem-tools-result').textContent = error.message; }
+});
+
+$('#preview-chain').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem) return;
+  const output = $('#chain-preview');
+  output.innerHTML = '<p>Analizando el stem…</p>';
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/producer-chain/preview`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({stem_name: state.selectedStem.name, source_kind: $('#stem-source-kind').value, include_artistic_saturation: $('#include-saturation').checked})});
+    state.chain = reply.chain;
+    const steps = reply.chain.steps || [];
+    const status = reply.chain.review_status;
+    output.innerHTML = steps.length
+      ? `<ol>${steps.map(step => `<li><strong>${escapeHtml(processorLabel(step.processor))}</strong><span>${escapeHtml(reasonLabel(step.reason))}</span><small>${escapeHtml(step.binding === 'reuse_existing' ? 'Reutiliza el FX existente' : 'Creará un FX nativo')}</small></li>`).join('')}</ol><p>${reply.reaper_binding ? 'Pista real verificada.' : 'Previsualización offline: abrí REAPER y el Bridge antes de aplicar.'}</p>`
+      : `<p>No se recomienda procesamiento rutinario para esta combinación. ${$('#stem-source-kind').value === 'suno_stems' ? 'El stem de Suno ya puede venir procesado.' : 'No se detectó evidencia suficiente.'}</p>`;
+    $('#apply-chain').disabled = !reply.can_apply;
+    $('#stem-tools-result').textContent = status === 'blocked_existing_fx' ? 'Hay FX existentes ambiguos; PampaPilot no aplicará nada.' : 'Propuesta lista para tu aprobación.';
+  } catch (error) { output.innerHTML = `<p>${escapeHtml(error.message)}</p>`; }
+});
+
+$('#apply-chain').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem || !state.chain) return;
+  if (!window.confirm(`Aplicar ${state.chain.steps.length} procesadores nativos a ${state.selectedStem.name}?`)) return;
+  $('#stem-tools-result').textContent = 'Aplicando toda la cadena en una única transacción…';
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/producer-chain/apply`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({stem_name: state.selectedStem.name, source_kind: $('#stem-source-kind').value, include_artistic_saturation: $('#include-saturation').checked, approved_chain_id: state.chain.chain_id})});
+    rememberUndo(reply);
+    $('#apply-chain').disabled = true;
+    $('#stem-tools-result').textContent = 'Cadena aplicada y cada FX fue verificado en REAPER.';
+  } catch (error) { $('#stem-tools-result').textContent = error.message; }
+});
+
+function rememberUndo(reply) {
+  const projectRef = reply.application?.result?.project_ref || state.selectedStem?.projectRef;
+  state.undo = {project_ref: projectRef, transaction_request_id: reply.transaction_request_id};
+  $('#undo-last').disabled = !(state.undo.project_ref && state.undo.transaction_request_id);
+}
+
+$('#undo-last').addEventListener('click', async () => {
+  if (!state.undo) return;
+  try {
+    await api('/api/reaper/undo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(state.undo)});
+    state.undo = null;
+    $('#undo-last').disabled = true;
+    $('#stem-tools-result').textContent = 'La última acción de PampaPilot fue deshecha.';
+  } catch (error) { $('#stem-tools-result').textContent = error.message; }
+});
+
+const capabilitiesDialog = $('#capabilities-dialog');
+async function openCapabilities() {
+  capabilitiesDialog.showModal();
+  const result = await api('/api/capabilities');
+  const labels = {ready: 'Disponible offline', web_ready: 'Disponible en esta pantalla', engine_ready: 'Motor listo'};
+  $('#capability-list').innerHTML = result.groups.map(group => `<section><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml(group.description)}</p><div>${group.items.map(item => `<span><strong>${escapeHtml(item.title)}</strong><small class="capability-${item.status}">${escapeHtml(labels[item.status] || item.status)}</small></span>`).join('')}</div></section>`).join('');
+}
+
+$('#open-capabilities').addEventListener('click', openCapabilities);
+$('#open-capabilities-stems').addEventListener('click', openCapabilities);
+
+const activityDialog = $('#activity-dialog');
+async function openActivity() {
+  activityDialog.showModal();
+  const result = await api('/api/activity');
+  $('#activity-list').innerHTML = result.items.length ? result.items.map(item => `<article><strong>${escapeHtml(item.summary)}</strong><span>${escapeHtml([item.project, item.target].filter(Boolean).join(' · '))}</span><small>${item.reaper_modified ? 'REAPER modificado y verificado' : 'Sin modificar REAPER'}</small></article>`).join('') : '<div class="empty-state">Todavía no hay acciones en esta sesión.</div>';
+}
+$('#open-activity').addEventListener('click', openActivity);
+
 const analysisDialog = $('#analysis-dialog');
 $('#analysis-details').addEventListener('click', () => {
   renderAnalysisDetails();
@@ -353,7 +520,9 @@ document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('c
 document.querySelectorAll('.nav-item[data-view]').forEach(button => button.addEventListener('click', () => {
   document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
   button.classList.add('active');
-  toast('Esta vista se habilitará en la siguiente iteración.');
+  if (button.dataset.view === 'home') document.querySelector('.project-column').scrollIntoView({behavior: 'smooth'});
+  else if (button.dataset.view === 'songs') $('#open-new-song').click();
+  else if (button.dataset.view === 'chat') $('#chat-input').focus();
 }));
 
 async function loadSettings() {

@@ -9,12 +9,16 @@ flujo habitual. Permite:
 - crear una canción cargando stems, MIDI, referencia y letra;
 - configurar LM Studio sin escribir el token en archivos;
 - conversar con el Productor IA usando contexto estructurado del proyecto;
-- recibir propuestas que siempre requieren aprobación.
+- recibir propuestas que siempre requieren aprobación;
+- declarar por stem si proviene de Suno o de una grabación orgánica;
+- abrir controles tipados de volumen, paneo, mute y solo para una pista real;
+- previsualizar y aplicar una cadena de FX nativos recomendada por el motor;
+- deshacer la última transacción propia y consultar la actividad de la sesión.
 
-En esta versión las propuestas del LLM son deliberadamente **no ejecutables**.
-El botón Aplicar informa que falta el mapeo determinista y no modifica REAPER.
-La siguiente capa traducirá propuestas admitidas a herramientas tipadas del
-motor, volverá a leer el estado de REAPER y ofrecerá undo/A-B.
+Las propuestas libres del LLM siguen siendo deliberadamente **no ejecutables**:
+no se confía en texto generado para modificar un DAW. Las acciones disponibles
+desde el panel de cada stem usan, en cambio, contratos deterministas del motor,
+GUID de pista, aprobación explícita, lectura posterior de REAPER y Undo.
 
 ## Arranque
 
@@ -76,3 +80,33 @@ son observaciones técnicas que requieren escucha antes de tomar decisiones de m
 La API correspondiente es `POST /api/projects/{project_name}/analysis`. Cuando aparece
 un reporte nuevo, el chat conserva la conversación de la misma canción pero recibe una
 actualización explícita de contexto, independientemente del LLM configurado.
+
+## Flujo de prueba por stem
+
+1. Abrir REAPER, cargar el proyecto correcto y ejecutar **PampaPilot: Start bridge**.
+2. En la web, pulsar `▶` o `⋮` junto al stem.
+3. Confirmar que el encabezado diga **Vinculada con REAPER**.
+4. Definir el origen del stem. Al cambiarlo, ejecutar otra vez **Analizar proyecto**.
+5. Para un ajuste fino, revisar volumen/paneo/mute y pulsar **Revisar y aplicar**.
+6. Para filtros, pulsar **Generar propuesta**. La propuesta enumera cada FX y explica
+   por qué lo sugiere. **Aplicar cadena aprobada** sólo se habilita si la pista y sus
+   FX existentes pudieron verificarse.
+7. Usar **Deshacer última acción** inmediatamente si el resultado no corresponde.
+
+La cadena automática trata los stems de Suno de forma conservadora. Una toma orgánica
+de voz o guitarra puede recibir puntos de partida para gate, EQ, compresión, de-esser o
+control dinámico cuando las mediciones lo justifican. Toda la cadena se aplica en una
+única transacción de REAPER.
+
+## Mapa de funciones
+
+La vista **Herramientas** diferencia:
+
+- **Disponible offline**: ya puede usarse sin REAPER;
+- **Disponible en esta pantalla**: tiene un flujo web completo;
+- **Motor listo**: la lógica y el Bridge existen, pero todavía se usará desde el agente
+  o desde una futura pantalla guiada.
+
+Este mapa evita confundir código ya implementado con controles todavía no expuestos.
+La vista **Actividad** registra clasificaciones, aplicaciones y Undo durante el proceso
+actual; no incluye secretos ni contenido del chat.

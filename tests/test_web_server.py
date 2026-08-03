@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from pampapilot.web_server import app, runtime
+from pampapilot.web_server import _suggested_track_names, app, runtime
 
 
 class WebServerTests(unittest.TestCase):
@@ -29,6 +29,21 @@ class WebServerTests(unittest.TestCase):
         self.assertTrue(response.json()["authentication_required"])
         self.assertEqual(response.json()["timeout_seconds"], 180.0)
         self.assertIn("token_persisted", response.json())
+
+    def test_capability_map_is_available_without_reaper(self):
+        response = self.client.get("/api/capabilities")
+        self.assertEqual(response.status_code, 200)
+        groups = response.json()["groups"]
+        self.assertGreaterEqual(len(groups), 3)
+        self.assertTrue(any(item["id"] == "producer_chain" for group in groups for item in group["items"]))
+
+    def test_track_names_remain_stable_after_analysis_is_invalidated(self):
+        names = _suggested_track_names(
+            [{"name": "5 Drums"}, {"name": "6 Drums- OK"}, {"name": "7 Drums"}]
+        )
+        self.assertEqual(names["5 Drums"], "Drums 1")
+        self.assertEqual(names["7 Drums"], "Drums 2")
+        self.assertEqual(names["6 Drums- OK"], "Drums- OK")
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")
