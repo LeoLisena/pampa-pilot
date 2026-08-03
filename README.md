@@ -108,6 +108,10 @@ No imprime nada mientras espera un cliente MCP; ese silencio es normal.
 El lanzador toma `ipc_root` de `reaper/bridge_config.local.json`, de modo que
 Python y Lua conservan el mismo transporte local después de un reinicio.
 
+La evaluación de proyectos relacionados, commits revisados, licencias y
+decisiones de implementación se conserva en
+[`docs/research/reaper-ecosystem-audit.md`](docs/research/reaper-ecosystem-audit.md).
+
 Para conectarlo a Codex, copie `.codex/config.toml.example` como
 `.codex/config.toml`, reemplace las rutas absolutas y reinicie Codex. El archivo
 real es local y no se versiona.

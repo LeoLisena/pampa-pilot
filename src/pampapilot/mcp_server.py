@@ -638,6 +638,48 @@ def get_project_state() -> dict[str, Any]:
 
 
 @mcp.tool(
+    title="Descubrir FX usados en el proyecto",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def discover_project_fx(
+    project_ref: str,
+    query: Annotated[str | None, Field(min_length=1, max_length=128)] = None,
+    track_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    include_parameters: bool = False,
+    max_parameters: Annotated[int, Field(ge=1, le=1000)] = 128,
+) -> dict[str, Any]:
+    """Filtra FX existentes y devuelve identidades estables; nunca los modifica."""
+
+    payload: dict[str, Any] = {
+        "project_ref": project_ref,
+        "include_parameters": include_parameters,
+        "max_parameters": max_parameters,
+    }
+    if query is not None:
+        payload["query"] = query
+    if track_guid is not None:
+        payload["track_guid"] = track_guid
+    return _call("discover_project_fx", payload)
+
+
+@mcp.tool(
+    title="Descubrir FX instalados en REAPER",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def discover_installed_fx(
+    project_ref: str,
+    query: Annotated[str | None, Field(min_length=1, max_length=128)] = None,
+    limit: Annotated[int, Field(ge=1, le=500)] = 100,
+) -> dict[str, Any]:
+    """Enumera nombres exactos de plugins disponibles para evitar adivinarlos."""
+
+    payload: dict[str, Any] = {"project_ref": project_ref, "limit": limit}
+    if query is not None:
+        payload["query"] = query
+    return _call("discover_installed_fx", payload)
+
+
+@mcp.tool(
     title="Leer ajustes de render y master",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )

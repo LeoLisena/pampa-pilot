@@ -37,6 +37,18 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Lee el estado estructural mínimo del proyecto.",
         ),
         ActionSpec(
+            "discover_project_fx",
+            False,
+            VerificationLevel.STATE,
+            "Descubre instancias FX por GUID y parámetros acotados.",
+        ),
+        ActionSpec(
+            "discover_installed_fx",
+            False,
+            VerificationLevel.STATE,
+            "Enumera nombres exactos de FX instalados sin modificar el proyecto.",
+        ),
+        ActionSpec(
             "get_render_settings",
             False,
             VerificationLevel.STATE,

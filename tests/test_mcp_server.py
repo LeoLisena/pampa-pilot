@@ -17,6 +17,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
             {
                 "health_check",
                 "get_project_state",
+                "discover_project_fx",
+                "discover_installed_fx",
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
@@ -62,6 +64,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         tools = {tool.name: tool for tool in result.tools}
         self.assertTrue(tools["health_check"].annotations.read_only_hint)
         self.assertTrue(tools["get_project_state"].annotations.read_only_hint)
+        self.assertTrue(tools["discover_project_fx"].annotations.read_only_hint)
+        self.assertTrue(tools["discover_installed_fx"].annotations.read_only_hint)
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)

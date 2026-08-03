@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.12.2"
+local BRIDGE_VERSION = "0.13.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -286,6 +286,14 @@ local function find_track_by_guid(project, guid)
   error("no existe una pista con el GUID indicado")
 end
 
+local function find_any_track_by_guid(project, guid)
+  require_string(guid, "track_guid", 64)
+  local master = reaper.GetMasterTrack(project)
+  if master and reaper.GetTrackGUID(master) == guid then return master, -1, true end
+  local track, index = find_track_by_guid(project, guid)
+  return track, index, false
+end
+
 local function read_track(track, index)
   local _, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
   local volume = reaper.GetMediaTrackInfo_Value(track, "D_VOL")
@@ -345,6 +353,38 @@ local function read_fx_chain(track, include_parameters)
     chain[#chain + 1] = read_fx(track, fx_index, include_parameters)
   end
   return chain
+end
+
+local function read_fx_discovery(track, fx_index, include_parameters, max_parameters)
+  local fx = read_fx(track, fx_index, false)
+  fx.scope = "track"
+  fx.parameters = {}
+  if include_parameters then
+    local limit = math.min(fx.parameter_count, max_parameters)
+    for parameter_index = 0, limit - 1 do
+      local _, parameter_name = reaper.TrackFX_GetParamName(
+        track, fx_index, parameter_index
+      )
+      local _, parameter_ident = reaper.TrackFX_GetParamIdent(
+        track, fx_index, parameter_index
+      )
+      local _, formatted = reaper.TrackFX_GetFormattedParamValue(
+        track, fx_index, parameter_index
+      )
+      fx.parameters[#fx.parameters + 1] = {
+        index = parameter_index,
+        name = parameter_name or "",
+        ident = parameter_ident or "",
+        normalized = reaper.TrackFX_GetParamNormalized(
+          track, fx_index, parameter_index
+        ),
+        formatted = formatted or "",
+      }
+    end
+  end
+  fx.parameters_truncated = include_parameters
+    and fx.parameter_count > #fx.parameters or false
+  return fx
 end
 
 local function read_render_settings(project, ref)
@@ -1012,6 +1052,103 @@ function ACTIONS.get_project_state(_, _)
     tempo_bpm = reaper.Master_GetTempo(),
     project_state_change_count = reaper.GetProjectStateChangeCount(project),
     tracks = tracks,
+  }, observations(true)
+end
+
+function ACTIONS.discover_project_fx(params, _)
+  local project, _, ref = require_project(params)
+  local query = nil
+  if params.query ~= nil then
+    query = require_string(params.query, "query", 128):lower()
+  end
+  local include_parameters = params.include_parameters == true
+  local max_parameters = params.max_parameters == nil and 128
+    or require_number(params.max_parameters, "max_parameters", 1, 1000)
+  if max_parameters % 1 ~= 0 then error("max_parameters debe ser entero") end
+
+  local tracks = {}
+  local fx_count = 0
+  local function scan(track, index, is_master)
+    local state = read_track(track, index)
+    local entry = {
+      guid = state.guid,
+      index = index,
+      name = is_master and "MASTER" or state.name,
+      is_master = is_master,
+      fx = {},
+    }
+    for fx_index = 0, reaper.TrackFX_GetCount(track) - 1 do
+      local fx = read_fx_discovery(
+        track, fx_index, include_parameters, max_parameters
+      )
+      if query == nil or fx.name:lower():find(query, 1, true) then
+        entry.fx[#entry.fx + 1] = fx
+        fx_count = fx_count + 1
+      end
+    end
+    if #entry.fx > 0 or params.track_guid ~= nil then
+      tracks[#tracks + 1] = entry
+    end
+  end
+
+  if params.track_guid ~= nil then
+    local track, index, is_master = find_any_track_by_guid(
+      project, params.track_guid
+    )
+    scan(track, index, is_master)
+  else
+    local master = reaper.GetMasterTrack(project)
+    if not master then error("REAPER no devolvió la pista master") end
+    scan(master, -1, true)
+    for index = 0, reaper.CountTracks(project) - 1 do
+      scan(reaper.GetTrack(project, index), index, false)
+    end
+  end
+  return {
+    project_ref = ref,
+    query = query,
+    include_parameters = include_parameters,
+    max_parameters = max_parameters,
+    track_count = #tracks,
+    fx_count = fx_count,
+    tracks = tracks,
+  }, observations(true)
+end
+
+function ACTIONS.discover_installed_fx(params, _)
+  local _, _, ref = require_project(params)
+  if type(reaper.EnumInstalledFX) ~= "function" then
+    error("esta versión de REAPER no expone EnumInstalledFX")
+  end
+  local query = nil
+  if params.query ~= nil then
+    query = require_string(params.query, "query", 128):lower()
+  end
+  local limit = params.limit == nil and 100
+    or require_number(params.limit, "limit", 1, 500)
+  if limit % 1 ~= 0 then error("limit debe ser entero") end
+  local matches, matched_count, index = {}, 0, 0
+  while true do
+    local ok, name, identifier = reaper.EnumInstalledFX(index)
+    if not ok or type(name) ~= "string" or name == "" then break end
+    if query == nil or name:lower():find(query, 1, true) then
+      matched_count = matched_count + 1
+      if #matches < limit then
+        matches[#matches + 1] = {
+          name = name,
+          identifier = type(identifier) == "string" and identifier or "",
+        }
+      end
+    end
+    index = index + 1
+  end
+  return {
+    project_ref = ref,
+    query = query,
+    matched_count = matched_count,
+    returned_count = #matches,
+    truncated = matched_count > #matches,
+    fx = matches,
   }, observations(true)
 end
 
