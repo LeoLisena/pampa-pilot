@@ -7,6 +7,12 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
 
+from .agent_protocol import (
+    AGENT_PROTOCOL_VERSION,
+    context_envelope,
+    normalize_actions,
+)
+from .knowledge_retrieval import retrieve_knowledge
 from .media_discovery import WORKSPACE_ROOT, discover_song_media
 from .project_analysis import (
     load_project_analysis,
@@ -152,7 +158,13 @@ def build_agent_messages(
     user_message: str,
     history: Sequence[Mapping[str, str]] = (),
 ) -> list[dict[str, str]]:
-    project_context = agent_project_context(project_context, user_message)
+    project_context = dict(project_context)
+    knowledge = retrieve_knowledge(user_message, project_context)
+    if knowledge["items"]:
+        project_context["knowledge"] = knowledge
+    project_context = context_envelope(
+        agent_project_context(project_context, user_message)
+    )
     messages = [
         {"role": "system", "content": load_system_prompt()},
         {
@@ -237,16 +249,44 @@ def build_context_update_message(
 ) -> str:
     """Add richer deterministic context while preserving a stateful conversation."""
 
+    enriched = dict(project_context)
+    knowledge = retrieve_knowledge(user_message, enriched)
+    if knowledge["items"]:
+        enriched["knowledge"] = knowledge
     return (
         "PampaPilot actualizó el contexto técnico del mismo proyecto. "
         "No es una canción ni una conversación nueva. Usá estos datos como evidencia:\n"
         + json.dumps(
-            agent_project_context(project_context, user_message),
+            context_envelope(agent_project_context(enriched, user_message)),
             ensure_ascii=False,
             separators=(",", ":"),
         )
         + "\n\nPedido actual del usuario: "
         + user_message.strip()
+    )
+
+
+def build_turn_context_message(
+    project_context: Mapping[str, Any], user_message: str
+) -> str:
+    """Attach only turn-specific retrieved knowledge to a stateful chat."""
+
+    knowledge = retrieve_knowledge(user_message, project_context)
+    if not knowledge["items"]:
+        return user_message
+    payload = {
+        "agent_protocol": {
+            "name": "pampapilot-agent",
+            "version": AGENT_PROTOCOL_VERSION,
+            "message_type": "turn_context",
+        },
+        "knowledge": knowledge,
+        "user_request": user_message,
+    }
+    return (
+        "PampaPilot recuperó conocimiento relevante para este turno. "
+        "Usalo como criterio citable, no como evidencia de señal:\n"
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     )
 
 
@@ -330,6 +370,14 @@ def parse_agent_response(raw: str) -> dict[str, Any]:
         return {"message": raw.strip(), "proposal": None, "structured": False}
     if not isinstance(decoded, Mapping) or not isinstance(decoded.get("message"), str):
         return {"message": raw.strip(), "proposal": None, "structured": False}
+    advertised_version = decoded.get("protocol_version", AGENT_PROTOCOL_VERSION)
+    if advertised_version != AGENT_PROTOCOL_VERSION:
+        return {
+            "message": "El modelo respondió con una versión incompatible del protocolo.",
+            "proposal": None,
+            "actions": [],
+            "structured": False,
+        }
     proposal = decoded.get("proposal")
     if proposal is not None and not isinstance(proposal, Mapping):
         proposal = None
@@ -355,30 +403,9 @@ def parse_agent_response(raw: str) -> dict[str, Any]:
                     if isinstance(change, Mapping)
                 ],
             }
-    raw_actions = decoded.get("actions", [])
-    actions = []
-    if isinstance(raw_actions, list):
-        for item in raw_actions[:12]:
-            if not isinstance(item, Mapping) or item.get("kind") not in {
-                "static_mix", "filter", "producer_chain", "ambience",
-                "vocal_rider", "section_volume", "mastering", "render",
-                "midi_cleanup", "song_structure", "analyze_project",
-                "adjust_compressor",
-            }:
-                continue
-            action = {
-                str(key): value
-                for key, value in item.items()
-                if key in {
-                    "kind", "target", "volume_delta_db", "volume_db", "pan",
-                    "muted", "soloed", "filter_type", "preset_name",
-                    "include_artistic_saturation", "source_kind",
-                    "effect_type",
-                    "attack_percent_delta",
-                }
-            }
-            actions.append(action)
+    actions = normalize_actions(decoded.get("actions", []))
     return {
+        "protocol_version": AGENT_PROTOCOL_VERSION,
         "message": str(decoded["message"])[:8_000],
         "proposal": proposal,
         "actions": actions,

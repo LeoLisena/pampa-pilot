@@ -328,6 +328,48 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertEqual(context.call_count, 1)
 
+    @patch("pampapilot.web_server._resolve_agent_evidence")
+    @patch("pampapilot.web_server.LMStudioClient.chat_result")
+    @patch("pampapilot.web_server.build_project_context")
+    def test_chat_resolves_one_bounded_evidence_round(self, context, chat, resolve):
+        from pampapilot.lmstudio_client import LMStudioChatResult
+
+        context.return_value = {"song": {"title": "Test"}, "stems": []}
+        resolve.return_value = {
+            "agent_protocol": {"name": "pampapilot-agent", "version": "1.0", "message_type": "result"},
+            "status": "ok",
+            "data": {"evidence": [{"evidence_type": "project_analysis", "status": "ok"}]},
+        }
+        chat.side_effect = [
+            LMStudioChatResult(
+                '{"protocol_version":"1.0","message":"Necesito datos",'
+                '"proposal":null,"actions":[{"kind":"request_evidence",'
+                '"evidence_type":"project_analysis"}]}',
+                "need-evidence", {},
+            ),
+            LMStudioChatResult(
+                '{"protocol_version":"1.0","message":"Ya puedo responder",'
+                '"proposal":null,"actions":[]}',
+                "final-evidence", {},
+            ),
+        ]
+
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "project_name": "Test",
+                "message": "analizá la compresión",
+                "history": [],
+                "conversation_id": "evidence-round-test",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["message"], "Ya puedo responder")
+        self.assertEqual(chat.call_count, 2)
+        self.assertEqual(chat.call_args_list[1].kwargs["previous_response_id"], "need-evidence")
+        resolve.assert_called_once()
+
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")
     def test_chat_reasoning_mode_overrides_automatic_selection(self, context, chat):

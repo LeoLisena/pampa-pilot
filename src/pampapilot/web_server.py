@@ -25,6 +25,7 @@ from .agent_context import (
     action_project_context,
     build_agent_messages,
     build_context_update_message,
+    build_turn_context_message,
     build_project_context,
     compact_project_context,
     load_system_prompt,
@@ -32,6 +33,13 @@ from .agent_context import (
     request_needs_deep_context,
     request_needs_reasoning,
     request_is_direct_action,
+)
+from .agent_protocol import (
+    ACTION_FIELDS,
+    AGENT_PROTOCOL_NAME,
+    AGENT_PROTOCOL_VERSION,
+    EVIDENCE_TYPES,
+    result_envelope,
 )
 from .ambience_proposal import (
     build_ambience_application_payload,
@@ -44,6 +52,7 @@ from .lmstudio_client import (
     LMStudioError,
     normalize_base_url,
 )
+from .knowledge_retrieval import retrieve_knowledge
 from .media_discovery import WORKSPACE_ROOT, discover_song_media
 from .midi_cleanup import preview_cleanup, run_cleanup
 from .mastering_proposal import (
@@ -658,6 +667,81 @@ def _chat_track(
 
 def _risk_rank(value: str) -> int:
     return {"low": 0, "medium": 1, "high": 2}.get(value, 2)
+
+
+def _resolve_agent_evidence(
+    project_name: str, requests: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Resolve one bounded, read-only evidence round for the planning LLM."""
+
+    if not 1 <= len(requests) <= 4:
+        raise ValueError("El LLM puede pedir entre una y cuatro evidencias por ronda")
+    context = build_project_context(project_name)
+    project = _project_view(project_name)
+    bridge_snapshot: dict[str, Any] | None = None
+    items: list[dict[str, Any]] = []
+    for request in requests:
+        evidence_type = str(request.get("evidence_type", ""))
+        target = str(request.get("target", "")).strip()
+        query = str(request.get("query", "")).strip()
+        try:
+            if evidence_type == "project_analysis":
+                data = context.get("analysis")
+                if data is None:
+                    raise ValueError("Todavía no existe un análisis técnico del proyecto")
+            elif evidence_type == "track_analysis":
+                stem = _resolve_chat_stem(project, target)
+                analysis = context.get("analysis")
+                analyzed = analysis.get("stems", []) if isinstance(analysis, dict) else []
+                wanted = {
+                    normalize_track_name(str(stem.get("name", ""))),
+                    normalize_track_name(str(stem.get("track_name", ""))),
+                }
+                matches = [
+                    item for item in analyzed
+                    if isinstance(item, dict)
+                    and normalize_track_name(str(item.get("track_name", ""))) in wanted
+                ]
+                if len(matches) != 1:
+                    raise ValueError("No hay un informe técnico único para esa pista")
+                data = matches[0]
+            elif evidence_type == "knowledge":
+                data = retrieve_knowledge(query or target, context)
+            elif evidence_type in {"reaper_track_state", "fx_parameters"}:
+                if bridge_snapshot is None:
+                    bridge_snapshot = dict(
+                        bridge_project(BridgeClient(timeout_seconds=8.0))["result"]
+                    )
+                stem = _resolve_chat_stem(project, target)
+                track = _chat_track(stem, list(bridge_snapshot.get("tracks", [])))
+                reply = BridgeClient(timeout_seconds=8.0).call(
+                    "get_track_state",
+                    {
+                        "project_ref": str(bridge_snapshot["project_ref"]),
+                        "track_guid": str(track["guid"]),
+                    },
+                )
+                data = (
+                    {"track": reply.result.get("track"), "fx": reply.result.get("fx", [])}
+                    if evidence_type == "reaper_track_state"
+                    else {"track": stem.get("track_name"), "fx": reply.result.get("fx", [])}
+                )
+            else:
+                raise ValueError("Tipo de evidencia no permitido")
+            items.append({
+                "evidence_type": evidence_type,
+                "target": target or None,
+                "status": "ok",
+                "data": data,
+            })
+        except Exception as exc:
+            items.append({
+                "evidence_type": evidence_type,
+                "target": target or None,
+                "status": "unavailable",
+                "error": str(exc),
+            })
+    return result_envelope(status="ok", data={"evidence": items})
 
 
 def _build_chat_action_plan(
@@ -1426,6 +1510,20 @@ def index() -> FileResponse:
 @app.get("/api/settings/brain")
 def get_brain_settings() -> dict[str, Any]:
     return runtime.public_brain()
+
+
+@app.get("/api/agent-protocol")
+def get_agent_protocol() -> dict[str, Any]:
+    return {
+        "name": AGENT_PROTOCOL_NAME,
+        "version": AGENT_PROTOCOL_VERSION,
+        "schema_base": "schemas/agent/v1",
+        "action_kinds": sorted(ACTION_FIELDS),
+        "evidence_types": sorted(EVIDENCE_TYPES),
+        "execution_boundary": (
+            "El LLM propone acciones; PampaPilot valida, aprueba, ejecuta y verifica."
+        ),
+    }
 
 
 @app.put("/api/settings/brain")
@@ -2236,7 +2334,10 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                     }
                 ]
             else:
-                messages = [{"role": "user", "content": value.message}]
+                messages = [{
+                    "role": "user",
+                    "content": build_turn_context_message(context, value.message),
+                }]
         elif deep_context:
             context = build_project_context(project_name)
             current_revision = _context_revision(context)
@@ -2252,7 +2353,10 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                     }
                 ]
             else:
-                messages = [{"role": "user", "content": value.message}]
+                messages = [{
+                    "role": "user",
+                    "content": build_turn_context_message(context, value.message),
+                }]
         else:
             messages = [{"role": "user", "content": value.message}]
         use_reasoning = value.reasoning_mode == "deep" or (
@@ -2305,6 +2409,72 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                     "actions": [],
                     "structured": False,
                 }
+        evidence_actions = [
+            item for item in response.get("actions", [])
+            if item.get("kind") == "request_evidence"
+        ]
+        other_actions = [
+            item for item in response.get("actions", [])
+            if item.get("kind") != "request_evidence"
+        ]
+        if evidence_actions:
+            if other_actions:
+                response = {
+                    "message": (
+                        "El modelo mezcló consultas de evidencia con cambios. "
+                        "No se aplicó nada; debe evaluar primero los datos solicitados."
+                    ),
+                    "proposal": None,
+                    "actions": [],
+                    "structured": True,
+                    "protocol_version": "1.0",
+                }
+            else:
+                evidence = await asyncio.to_thread(
+                    _resolve_agent_evidence, project_name, evidence_actions
+                )
+                evidence_result = await asyncio.to_thread(
+                    LMStudioClient(runtime.brain()).chat_result,
+                    [{
+                        "role": "user",
+                        "content": (
+                            "PampaPilot resolvió tu solicitud de evidencia. "
+                            "Tomá ahora una decisión final usando el contrato agent/1.0; "
+                            "no vuelvas a pedir evidencia en esta ronda:\n"
+                            + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+                        ),
+                    }],
+                    max_tokens=1600,
+                    reasoning="on" if use_reasoning else "off",
+                    previous_response_id=result.response_id,
+                    store=True,
+                )
+                evidence_response = parse_agent_response(evidence_result.content)
+                if evidence_response.get("structured"):
+                    result = evidence_result
+                    response = evidence_response
+                    repeated = [
+                        item for item in response.get("actions", [])
+                        if item.get("kind") == "request_evidence"
+                    ]
+                    if repeated:
+                        response["actions"] = []
+                        response["proposal"] = None
+                        response["message"] = (
+                            "La evidencia solicitada fue entregada, pero el modelo no llegó "
+                            "a una decisión final. No se aplicó ningún cambio."
+                        )
+                else:
+                    response = {
+                        "message": (
+                            "El modelo recibió la evidencia, pero no devolvió una decisión "
+                            "estructurada válida. No se aplicó ningún cambio."
+                        ),
+                        "proposal": None,
+                        "actions": [],
+                        "structured": False,
+                        "protocol_version": "1.0",
+                    }
         response["context_level"] = context_level
         response["reasoning_mode"] = value.reasoning_mode
         response["reasoning_used"] = use_reasoning

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pampapilot.local/schemas/agent/v1/result.schema.json",
+  "title": "PampaPilot Agent Result 1.0",
+  "type": "object",
+  "required": ["agent_protocol", "status", "data"],
+  "properties": {
+    "agent_protocol": {"$ref": "types.schema.json#/$defs/resultHeader"},
+    "status": {"enum": ["ok", "rejected", "failed"]},
+    "data": {"type": "object"}
+  },
+  "additionalProperties": false
+}

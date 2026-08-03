@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pampapilot.local/schemas/agent/v1/types.schema.json",
+  "$defs": {
+    "baseHeader": {
+      "type": "object",
+      "required": ["name", "version", "message_type"],
+      "properties": {
+        "name": {"const": "pampapilot-agent"},
+        "version": {"const": "1.0"},
+        "message_type": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "contextHeader": {"allOf": [{"$ref": "#/$defs/baseHeader"}, {"properties": {"message_type": {"const": "context"}}}]},
+    "resultHeader": {"allOf": [{"$ref": "#/$defs/baseHeader"}, {"properties": {"message_type": {"const": "result"}}}]},
+    "errorHeader": {"allOf": [{"$ref": "#/$defs/baseHeader"}, {"properties": {"message_type": {"const": "error"}}}]},
+    "knowledgeContext": {
+      "type": "object",
+      "required": ["query", "retrieval", "items"],
+      "properties": {
+        "query": {"type": "string"},
+        "retrieval": {"const": "lexical-v1"},
+        "items": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["static_mix", "filter", "adjust_compressor", "producer_chain", "ambience", "vocal_rider", "section_volume", "mastering", "render", "midi_cleanup", "song_structure", "analyze_project", "request_evidence"]},
+        "target": {"type": "string"},
+        "volume_delta_db": {"type": "number"},
+        "volume_db": {"type": "number"},
+        "pan": {"type": "number", "minimum": -1, "maximum": 1},
+        "muted": {"type": "boolean"},
+        "soloed": {"type": "boolean"},
+        "filter_type": {"type": "string"},
+        "preset_name": {"type": "string"},
+        "attack_percent_delta": {"type": "number"},
+        "include_artistic_saturation": {"type": "boolean"},
+        "source_kind": {"type": "string"},
+        "effect_type": {"type": "string"},
+        "evidence_type": {"enum": ["project_analysis", "track_analysis", "reaper_track_state", "fx_parameters", "knowledge"]},
+        "query": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

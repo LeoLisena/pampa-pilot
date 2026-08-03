@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pampapilot.local/schemas/agent/v1/error.schema.json",
+  "title": "PampaPilot Agent Error 1.0",
+  "type": "object",
+  "required": ["agent_protocol", "error"],
+  "properties": {
+    "agent_protocol": {"$ref": "types.schema.json#/$defs/errorHeader"},
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]+$"},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

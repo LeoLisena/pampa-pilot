@@ -92,6 +92,13 @@ podrá usar el mismo catálogo. Los modelos musicales especializados serán
 consultores de sólo lectura y entregarán propuestas al orquestador, nunca cambios
 directos en REAPER.
 
+La frontera concreta con el cerebro está formalizada como
+`pampapilot-agent/1.0`: contexto, respuesta/plan, resultado y error tienen JSON
+Schema versionado. PampaPilot adjunta un contexto híbrido y conocimiento
+recuperado; si falta evidencia, el modelo puede pedir una única ronda agrupada de
+lecturas de análisis, REAPER, FX o conocimiento. Véase
+[`agent-protocol.md`](agent-protocol.md).
+
 Los cálculos de señal, reglas versionadas, límites, identificadores de
 aprobación y verificaciones son deterministas y no dependen del proveedor del
 LLM. Un cerebro menos capaz aún puede interpretar peor una intención; por eso

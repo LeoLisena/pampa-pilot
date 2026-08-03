@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pampapilot.local/schemas/agent/v1/context.schema.json",
+  "title": "PampaPilot Agent Context 1.0",
+  "type": "object",
+  "required": ["agent_protocol", "song", "verification"],
+  "properties": {
+    "agent_protocol": {"$ref": "types.schema.json#/$defs/contextHeader"},
+    "song": {"type": "object"},
+    "stems": {"type": "array", "items": {"type": "object"}},
+    "analysis": {"type": ["object", "null"]},
+    "knowledge": {"$ref": "types.schema.json#/$defs/knowledgeContext"},
+    "verification": {"type": "object"}
+  },
+  "additionalProperties": true
+}

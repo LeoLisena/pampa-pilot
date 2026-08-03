@@ -81,6 +81,13 @@ class AgentContextTests(unittest.TestCase):
         self.assertFalse(result["structured"])
         self.assertIsNone(result["proposal"])
 
+    def test_rejects_incompatible_agent_protocol_version(self):
+        result = parse_agent_response(
+            '{"protocol_version":"2.0","message":"x","proposal":null,"actions":[]}'
+        )
+        self.assertFalse(result["structured"])
+        self.assertEqual(result["actions"], [])
+
     def test_routes_greetings_to_compact_context_and_analysis_to_deep_context(self):
         self.assertFalse(request_needs_deep_context("hola, ¿cómo estás?"))
         self.assertTrue(request_needs_deep_context("analizá la mezcla y la voz"))
@@ -130,6 +137,7 @@ class AgentContextTests(unittest.TestCase):
         )
         self.assertIn("mismo proyecto", message)
         self.assertIn("analizá la voz", message)
+        self.assertIn('"version":"1.0"', message)
 
     def test_agent_context_keeps_findings_but_drops_verbose_analysis_fields(self):
         context = agent_project_context(
