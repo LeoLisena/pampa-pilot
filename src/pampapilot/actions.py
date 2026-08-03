@@ -49,6 +49,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Enumera nombres exactos de FX instalados sin modificar el proyecto.",
         ),
         ActionSpec(
+            "discover_fx_parameter_domain",
+            False,
+            VerificationLevel.STATE,
+            "Muestrea sin escribir los valores formateados posibles de un parámetro FX.",
+        ),
+        ActionSpec(
             "get_render_settings",
             False,
             VerificationLevel.STATE,

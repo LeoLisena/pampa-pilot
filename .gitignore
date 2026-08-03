@@ -12,6 +12,7 @@ build/
 *.rpp-bak
 reaper/bridge_config.local.json
 .codex/config.toml
+.codex-remote-attachments/
 
 # Audio, MIDI y renders locales. Nunca se publican en GitHub.
 media/

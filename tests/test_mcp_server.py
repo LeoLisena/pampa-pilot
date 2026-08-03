@@ -19,6 +19,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "get_project_state",
                 "discover_project_fx",
                 "discover_installed_fx",
+                "discover_fx_parameter_domain",
                 "get_render_settings",
                 "get_master_track_state",
                 "get_track_state",
@@ -84,6 +85,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tools["get_project_state"].annotations.read_only_hint)
         self.assertTrue(tools["discover_project_fx"].annotations.read_only_hint)
         self.assertTrue(tools["discover_installed_fx"].annotations.read_only_hint)
+        self.assertTrue(tools["discover_fx_parameter_domain"].annotations.read_only_hint)
         self.assertTrue(tools["get_render_settings"].annotations.read_only_hint)
         self.assertTrue(tools["get_master_track_state"].annotations.read_only_hint)
         self.assertFalse(tools["create_track"].annotations.read_only_hint)

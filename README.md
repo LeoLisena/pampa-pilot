@@ -59,6 +59,9 @@ El puente 0.17.0 agrega edición verificable de fades por GUID e inspección de
 envolventes de volumen. El puente 0.18.0 incorpora ReaTune mediante presets
 propios: identifica la instancia por GUID, carga un nombre exacto y comprueba
 que REAPER lo conservó, sin depender de parámetros internos no expuestos.
+El puente 0.19.0 habilita el alta y retirada verificable de ReaFIR y el
+descubrimiento de dominios públicos sin escribirlos. La reducción de ruido no
+se habilita todavía: el modo Subtract y el perfil son estado privado del plugin.
 
 ## Decisiones iniciales
 

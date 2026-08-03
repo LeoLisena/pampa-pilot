@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.18.0"
+local BRIDGE_VERSION = "0.19.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -1429,6 +1429,48 @@ function ACTIONS.discover_project_fx(params, _)
   }, observations(true)
 end
 
+function ACTIONS.discover_fx_parameter_domain(params, _)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local parameter_ident = require_string(
+    params.parameter_ident, "parameter_ident", 128)
+  local sample_count = params.sample_count == nil and 65
+    or require_integer(params.sample_count, "sample_count", 2, 257)
+  local fx_index = find_fx_by_guid(track, fx_guid)
+  local parameter_index = find_fx_parameter_by_ident(
+    track, fx_index, parameter_ident)
+  local values, seen = {}, {}
+  for sample_index = 0, sample_count - 1 do
+    local normalized = sample_index / (sample_count - 1)
+    local ok, formatted = reaper.TrackFX_FormatParamValueNormalized(
+      track, fx_index, parameter_index, normalized)
+    if ok then
+      formatted = formatted or ""
+      if not seen[formatted] then
+        seen[formatted] = true
+        values[#values + 1] = {
+          normalized = normalized,
+          formatted = formatted,
+        }
+      end
+    end
+  end
+  local _, current_formatted = reaper.TrackFX_GetFormattedParamValue(
+    track, fx_index, parameter_index)
+  return {
+    project_ref = ref,
+    track_guid = params.track_guid,
+    fx_guid = fx_guid,
+    parameter_ident = parameter_ident,
+    parameter_index = parameter_index,
+    current_normalized = reaper.TrackFX_GetParamNormalized(
+      track, fx_index, parameter_index),
+    current_formatted = current_formatted or "",
+    sampled_values = values,
+  }, observations(true)
+end
+
 function ACTIONS.discover_installed_fx(params, _)
   local _, _, ref = require_project(params)
   if type(reaper.EnumInstalledFX) ~= "function" then
@@ -2028,6 +2070,9 @@ function ACTIONS.add_stock_fx(params, request_id)
     plugin_name, expected_name, description = "ReaDelay (Cockos)", "readelay", "agregar ReaDelay"
   elseif fx_type == "reatune" then
     plugin_name, expected_name, description = "ReaTune (Cockos)", "reatune", "agregar ReaTune"
+  elseif fx_type == "reafir" then
+    plugin_name = "ReaFir (FFT EQ+Dynamics Processor) (Cockos)"
+    expected_name, description = "reafir", "agregar ReaFIR"
   else
     error("FX nativo no permitido")
   end
@@ -2102,7 +2147,8 @@ function ACTIONS.remove_track_fx(params, request_id)
       and not lower_name:find("reaxcomp", 1, true)
       and not lower_name:find("reaverbate", 1, true)
       and not lower_name:find("readelay", 1, true)
-      and not lower_name:find("reatune", 1, true) then
+      and not lower_name:find("reatune", 1, true)
+      and not lower_name:find("reafir", 1, true) then
     error("el FX no pertenece al conjunto removible permitido")
   end
   local before_count = reaper.TrackFX_GetCount(track)

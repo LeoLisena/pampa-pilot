@@ -920,6 +920,31 @@ def discover_installed_fx(
 
 
 @mcp.tool(
+    title="Descubrir dominio formateado de un parámetro FX",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def discover_fx_parameter_domain(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    fx_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    parameter_ident: Annotated[str, Field(min_length=1, max_length=128)],
+    sample_count: Annotated[int, Field(ge=2, le=257)] = 65,
+) -> dict[str, Any]:
+    """Muestrea la representación del plugin sin cambiar el parámetro actual."""
+
+    return _call(
+        "discover_fx_parameter_domain",
+        {
+            "project_ref": project_ref,
+            "track_guid": track_guid,
+            "fx_guid": fx_guid,
+            "parameter_ident": parameter_ident,
+            "sample_count": sample_count,
+        },
+    )
+
+
+@mcp.tool(
     title="Leer ajustes de render y master",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -1211,7 +1236,7 @@ def add_stock_fx(
     track_guid: str,
     fx_type: Literal[
         "reacomp", "reaeq", "reagate", "reaxcomp", "reaverbate", "readelay",
-        "reatune"
+        "reatune", "reafir"
     ],
 ) -> dict[str, Any]:
     """Agrega un procesador nativo permitido y verifica identidad y estado."""

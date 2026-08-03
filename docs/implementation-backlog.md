@@ -25,8 +25,10 @@ Objetivo: reducción de ruido conservadora para voces, guitarras y cuerdas
 orgánicas. No se aplicará automáticamente a stems de Suno ni por el solo hecho
 de detectar pasajes silenciosos.
 
-- [ ] Descubrir y documentar los parámetros y modos que expone ReaFIR.
-- [ ] Implementar alta y retirada por GUID.
+- [x] Descubrir y documentar los parámetros públicos que expone ReaFIR y
+      confirmar que modo y perfil permanecen en estado privado.
+- [x] Implementar alta y retirada por GUID.
+- [x] Añadir descubrimiento de dominios formateados de sólo lectura.
 - [ ] Implementar perfil de ruido con captura explícita de un tramo aprobado.
 - [ ] Aplicar reducción en modo subtract con intensidad limitada.
 - [ ] Verificar modo, mezcla, estado y perfil cargado.

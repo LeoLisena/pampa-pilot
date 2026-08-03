@@ -4,6 +4,10 @@ PampaPilot no expone parámetros VST arbitrarios. Cada efecto permitido tiene un
 adaptador tipado que recibe unidades musicales, usa GUID estables y vuelve a leer
 el estado que REAPER conservó.
 
+`discover_fx_parameter_domain` es la excepción de sólo lectura usada durante el
+desarrollo de adaptadores: muestrea cómo el propio plugin formatea un parámetro
+sin cambiar su valor actual ni habilitar escritura arbitraria.
+
 ## Identidad común
 
 Toda mutación requiere:
@@ -13,7 +17,7 @@ Toda mutación requiere:
 - `fx_guid`: identidad estable de la instancia del efecto.
 
 `add_stock_fx` permite actualmente `reacomp`, `reaeq`, `reagate`, `reaxcomp`,
-`reaverbate`, `readelay` y `reatune`. Cada alta comprueba que
+`reaverbate`, `readelay`, `reatune` y `reafir`. Cada alta comprueba que
 la cadena aumentó exactamente en un efecto y que éste quedó habilitado y online.
 
 `add_instrument` separa los generadores de sonido de los efectos de audio. Su
@@ -35,6 +39,16 @@ un nombre explícito, lo carga mediante la API de presets y vuelve a leerlo. El
 prefijo `PampaPilot - ` es una convención recomendada, no una limitación. Un
 preset inexistente o una lectura distinta rechaza la transacción y restaura el
 estado anterior mediante undo.
+
+## ReaFIR
+
+El puente 0.19.0 permite agregar y retirar ReaFIR por GUID y descubrir dominios
+formateados sin modificar el proyecto. La prueba en REAPER 7.78/x64 confirmó
+que los parámetros públicos 0 y 1 corresponden a `Show analysis` y
+`Reduce artifacts (less effective)`. El desplegable `Mode: EQ` y el perfil
+espectral no forman parte de esos parámetros y pertenecen al estado privado del
+plugin. Por eso PampaPilot todavía no acepta valores de modo o perfil: no
+presentará una reducción de ruido como verificada mientras no pueda releerlos.
 
 Esta estrategia adapta la operación genérica de presets observada en Total
 REAPER MCP y Bonfire REAPER MCP, ambos bajo licencia MIT, pero mantiene la
