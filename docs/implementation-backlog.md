@@ -141,6 +141,9 @@ Referencias de diseño para carga genérica de presets:
 - [ ] Alineación temporal y de fase entre micrófonos o tomas relacionadas.
 - [x] Detección conservadora de límites duros, impulsos, silencios internos,
       clipping y colas activas, ligada por SHA-256 al rango usado por el ítem.
+- [x] Enrutamiento reutilizable de problemas por stem hacia reexportación,
+      EQ, gate, compresión, de-esser, análisis de resonancias o control mono,
+      sin convertir candidatos espectrales en defectos automáticos.
 - [x] Validar en vivo el contexto enriquecido de ítem del puente 0.22.0 sobre
       `Guitar`, incluyendo ruta, offset, playrate, duración, loop y fades.
 - [ ] Audicionar candidatos detectados sobre grabaciones orgánicas reales y

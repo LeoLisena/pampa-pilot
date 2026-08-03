@@ -119,3 +119,29 @@ def test_invalid_or_duplicate_override_is_rejected() -> None:
             ],
             knowledge_root=KNOWLEDGE_ROOT,
         )
+
+
+def test_organic_quiet_floor_and_spectral_candidates_remain_nonautomatic() -> None:
+    manifest = _manifest()
+    vocal = manifest["stems"][1]["audio"]
+    vocal["quiet_block_ratio_below_minus_40_dbfs"] = 0.25
+    vocal["quiet_rms_dbfs_p90_below_minus_40"] = -58.0
+    vocal["active_rms_dbfs_p90"] = -18.0
+    vocal["spectral_band_energy_ratio"]["presence_2000_5000"] = 0.60
+
+    result = build_song_diagnosis(
+        manifest,
+        "suno_stems",
+        [{"track_name": "Vocals", "source_kind": "organic_multitrack"}],
+        knowledge_root=KNOWLEDGE_ROOT,
+    )
+    findings = {
+        finding["id"]: finding
+        for finding in result["stems"][1]["findings"]
+    }
+
+    assert "capture.quiet_floor_candidate" in findings
+    assert "spectrum.presence_concentration_candidate" in findings
+    assert all(
+        finding["automatically_actionable"] is False for finding in findings.values()
+    )

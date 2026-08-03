@@ -27,6 +27,15 @@ No abre ni modifica REAPER, y no confunde medición de señal con aprobación
 perceptual. Las cadenas propuestas continúan requiriendo A/B a volumen igualado
 y ajuste fino humano.
 
+Cada stem incluye además `problem_routes`: una ruta reutilizable desde el
+hallazgo hacia el siguiente análisis o procesador apropiado. El clipping deriva
+a reemplazo o reexportación —ningún filtro recupera muestras destruidas—; la
+sibilancia a la propuesta de de-esser; una concentración de presencia al
+analizador dinámico de resonancias; la variación orgánica amplia a
+automatización/compresión; y los pasajes silenciosos medibles a una evaluación
+conservadora de gate. Estas rutas nunca ejecutan y conservan para Suno la postura
+`correct_observed_defect_only`.
+
 ## Validación con Mi Pequeño Sol
 
 Los 12 stems actuales se declararon como procedentes de Suno. La estrategia

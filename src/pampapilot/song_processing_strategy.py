@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 from .media_discovery import WORKSPACE_ROOT
 from .processing_proposal import build_processing_proposal
+from .problem_routing import route_stem_findings
 
 
 SUPPORTED_ROLES = {
@@ -53,6 +54,7 @@ def build_song_processing_strategy(
         role = str(stem["role"])
         source_kind = str(stem["source_kind"])
         finding_ids = {str(item["id"]) for item in stem.get("findings", [])}
+        problem_routes = route_stem_findings(stem.get("findings", []), source_kind)
         selected_chain: list[dict[str, Any]] = []
 
         if source_kind == "suno_stems":
@@ -103,6 +105,7 @@ def build_song_processing_strategy(
                 "disposition": disposition,
                 "rationale": rationale,
                 "diagnosed_finding_ids": sorted(finding_ids),
+                "problem_routes": problem_routes,
                 "chain": selected_chain,
             }
         )

@@ -70,6 +70,7 @@ def test_strategy_preserves_suno_and_selects_supported_organic_candidates() -> N
     assert strategy["summary"]["audition_candidate_count"] == 1
     assert items["Synth"]["disposition"] == "preserve_existing_processing"
     assert items["Synth"]["chain"] == []
+    assert items["Synth"]["problem_routes"][0]["next_stage"] == "leave_unchanged"
     assert items["Guitar"]["disposition"] == "no_observed_processing_trigger"
     assert [step["processor"] for step in items["Vocals"]["chain"]] == [
         "reaeq",

@@ -159,6 +159,76 @@ def _stem_findings(
                 "Listen for harsh consonants before proposing de-essing.",
             )
         )
+    bands = audio.get("spectral_band_energy_ratio", {})
+    if isinstance(bands, Mapping):
+        eligible_tonal_roles = {
+            "lead_vocal", "backing_vocals", "guitar", "strings", "keys", "synth"
+        }
+        sub_ratio = bands.get("sub_bass_20_60", 0.0)
+        bass_ratio = bands.get("bass_60_250", 0.0)
+        low_end = (
+            float(sub_ratio) + float(bass_ratio)
+            if isinstance(sub_ratio, (int, float))
+            and isinstance(bass_ratio, (int, float))
+            else 0.0
+        )
+        if (
+            role in eligible_tonal_roles
+            and low_end >= float(thresholds["non_bass_low_end_ratio"])
+        ):
+            findings.append(
+                _finding(
+                    "spectrum.low_end_concentration_candidate",
+                    "low",
+                    "low",
+                    f"Average 20-250 Hz energy ratio is {low_end:.3f}.",
+                    "The stem has broad low-end concentration for its inferred role.",
+                    "Confirm the role and audition EQ; do not infer muddiness from this metric alone.",
+                )
+            )
+        raw_presence = bands.get("presence_2000_5000", 0.0)
+        presence = float(raw_presence) if isinstance(raw_presence, (int, float)) else 0.0
+        if (
+            role in eligible_tonal_roles
+            and presence >= float(thresholds["presence_band_ratio"])
+        ):
+            findings.append(
+                _finding(
+                    "spectrum.presence_concentration_candidate",
+                    "low",
+                    "low",
+                    f"Average 2-5 kHz energy ratio is {presence:.3f}.",
+                    "The stem concentrates energy in a band often associated with presence or hardness.",
+                    "Run time-varying resonance analysis before considering dynamic control.",
+                )
+            )
+    quiet_ratio = audio.get("quiet_block_ratio_below_minus_40_dbfs")
+    quiet_floor = audio.get("quiet_rms_dbfs_p90_below_minus_40")
+    active_p90 = audio.get("active_rms_dbfs_p90")
+    quiet_metrics_present = all(
+        isinstance(value, (int, float))
+        for value in (quiet_ratio, quiet_floor, active_p90)
+    )
+    quiet_gap = (
+        float(active_p90) - float(quiet_floor) if quiet_metrics_present else 0.0
+    )
+    if (
+        source_kind == "organic_multitrack"
+        and role in {"lead_vocal", "guitar"}
+        and quiet_metrics_present
+        and float(quiet_ratio) >= float(thresholds["organic_quiet_block_ratio"])
+        and quiet_gap >= float(thresholds["minimum_quiet_active_gap_db"])
+    ):
+        findings.append(
+            _finding(
+                "capture.quiet_floor_candidate",
+                "low",
+                "medium",
+                f"Quiet blocks occupy {float(quiet_ratio):.1%} with a {quiet_gap:.1f} dB active gap.",
+                "The recording exposes separated quiet passages that may contain room or equipment noise.",
+                "Inspect the quiet passages, then audition a conservative gate only if noise is audible.",
+            )
+        )
     return findings
 
 
@@ -271,6 +341,10 @@ def build_song_diagnosis(
                         "spectral_centroid_hz",
                         "sibilance_ratio_p95",
                         "low_frequency_ratio_below_100_hz_p95",
+                        "quiet_block_ratio_below_minus_40_dbfs",
+                        "quiet_rms_dbfs_p90_below_minus_40",
+                        "active_rms_dbfs_p90",
+                        "spectral_band_energy_ratio",
                     )
                 },
                 "findings": findings,

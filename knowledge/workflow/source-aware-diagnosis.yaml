@@ -19,6 +19,10 @@ thresholds:
   stereo_correlation_mono_risk: -0.25
   vocal_low_frequency_ratio_p95: 0.35
   vocal_sibilance_ratio_p95: 0.60
+  non_bass_low_end_ratio: 0.55
+  presence_band_ratio: 0.55
+  organic_quiet_block_ratio: 0.10
+  minimum_quiet_active_gap_db: 15.0
   organic_active_rms_spread_wide_db: 12.0
   active_rms_spread_already_controlled_db: 4.0
   spectral_relationship_priority_score: 0.65

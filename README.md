@@ -109,6 +109,8 @@ La materialización MIDI verificable está en
 [docs/midi-import.md](docs/midi-import.md).
 La estrategia híbrida de procesamiento por stem está en
 [docs/song-processing-strategy.md](docs/song-processing-strategy.md).
+El diagnóstico ahora enlaza cada problema observado con el siguiente analizador
+o filtro candidato, conservando una política especialmente cauta para Suno.
 El análisis temporal reutilizable está en
 [docs/timeline-analysis.md](docs/timeline-analysis.md) y su aplicación a
 secciones en [docs/song-structure.md](docs/song-structure.md).
