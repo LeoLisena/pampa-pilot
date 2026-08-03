@@ -1,0 +1,38 @@
+schema_version: 1
+id: workflow.song-intake
+stage: intake
+
+required_inputs:
+  - song_name
+  - confirmed_bpm
+  - stems
+
+optional_inputs:
+  - full_mix_reference
+  - instrument_midi
+  - aesthetic_reference
+
+validation:
+  - discover_files_without_opening_the_daw
+  - require_unique_track_names
+  - compare_stem_durations
+  - compare_sample_rates
+  - detect_byte_identical_stems
+  - compare_midi_median_tempo_with_confirmed_bpm
+  - verify_midi_cleanup_report_matches_current_source_hash
+
+suno_policy:
+  preserve_relative_stem_levels: true
+  normalize_individual_stems: false
+  initial_faders_db: 0.0
+  reason: stems_inherit_balance_from_an_already_mixed_source
+
+outputs:
+  manifest: sessions/<song>/song-manifest.json
+  reaper_plan_execute: false
+
+safety:
+  - never_modify_media_inputs
+  - never_open_or_control_reaper_during_intake
+  - manifest_writes_are_confined_to_sessions
+  - signal_metrics_are_observations_not_mix_decisions

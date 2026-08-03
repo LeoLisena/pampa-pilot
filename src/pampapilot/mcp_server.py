@@ -20,6 +20,11 @@ from .midi_cleanup import (
     preview_cleanup,
     run_cleanup,
 )
+from .song_preparation import (
+    SongPreparationConfig,
+    build_song_manifest,
+    prepare_song as write_prepared_song,
+)
 
 
 mcp = MCPServer(
@@ -32,7 +37,9 @@ mcp = MCPServer(
         "si sus indicadores son false. Las ediciones producen transacciones undo; "
         "save_project_as cambia la identidad del proyecto y devuelve un project_ref nuevo. "
         "Las herramientas MIDI offline no requieren REAPER: preview_midi_cleanup nunca "
-        "escribe y clean_midi_files conserva los originales y sólo escribe en sessions/."
+        "escribe y clean_midi_files conserva los originales y sólo escribe en sessions/. "
+        "preview_song_preparation planifica una sesión sin escribir; prepare_song sólo "
+        "crea un manifiesto bajo sessions/ y nunca importa en REAPER."
     ),
 )
 _bridge = BridgeClient()
@@ -142,6 +149,67 @@ def clean_midi_files(
     audio = resolve_input_file(audio_path, suffixes={".wav"})
     output = resolve_output_directory(output_directory)
     return run_cleanup(midi, audio, output, config=_midi_config(options))
+
+
+def _song_config(
+    bpm: float,
+    numerator: int,
+    denominator: int,
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    analysis_level: Literal["metadata", "signal"],
+) -> SongPreparationConfig:
+    return SongPreparationConfig(
+        bpm=bpm,
+        numerator=numerator,
+        denominator=denominator,
+        source_kind=source_kind,
+        analysis_level=analysis_level,
+    )
+
+
+@mcp.tool(
+    title="Previsualizar preparación de canción",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_song_preparation(
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    numerator: Annotated[int, Field(ge=1, le=32)] = 4,
+    denominator: Literal[1, 2, 4, 8, 16, 32] = 4,
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"] = "suno_stems",
+    analysis_level: Literal["metadata", "signal"] = "metadata",
+) -> dict[str, Any]:
+    """Valida medios y devuelve un plan de sesión sin escribir ni abrir REAPER."""
+
+    return build_song_manifest(
+        song_name,
+        _song_config(bpm, numerator, denominator, source_kind, analysis_level),
+    )
+
+
+@mcp.tool(
+    title="Preparar manifiesto de canción",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def prepare_song(
+    song_name: Annotated[str, Field(min_length=1, max_length=128)],
+    bpm: Annotated[float, Field(ge=20.0, le=400.0)],
+    numerator: Annotated[int, Field(ge=1, le=32)] = 4,
+    denominator: Literal[1, 2, 4, 8, 16, 32] = 4,
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"] = "suno_stems",
+    analysis_level: Literal["metadata", "signal"] = "metadata",
+) -> dict[str, Any]:
+    """Escribe song-manifest.json bajo sessions/; no ejecuta el plan de REAPER."""
+
+    return write_prepared_song(
+        song_name,
+        _song_config(bpm, numerator, denominator, source_kind, analysis_level),
+    )
 
 
 @mcp.tool(

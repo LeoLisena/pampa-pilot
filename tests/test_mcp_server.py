@@ -35,6 +35,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "analyze_midi",
                 "preview_midi_cleanup",
                 "clean_midi_files",
+                "preview_song_preparation",
+                "prepare_song",
             },
         )
         tools = {tool.name: tool for tool in result.tools}
@@ -65,6 +67,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["clean_midi_files"].annotations.read_only_hint)
         self.assertFalse(tools["clean_midi_files"].annotations.destructive_hint)
         self.assertTrue(tools["clean_midi_files"].annotations.idempotent_hint)
+        self.assertTrue(tools["preview_song_preparation"].annotations.read_only_hint)
+        self.assertFalse(tools["prepare_song"].annotations.read_only_hint)
+        self.assertFalse(tools["prepare_song"].annotations.destructive_hint)
+        self.assertTrue(tools["prepare_song"].annotations.idempotent_hint)
 
 
 if __name__ == "__main__":

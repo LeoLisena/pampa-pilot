@@ -68,3 +68,22 @@ La suma flotante equivalente, todavía sin FX ni mastering, midió:
 
 La transacción permanece reversible y el proyecto no se guarda hasta completar
 la primera evaluación auditiva.
+
+## Primera preparación offline de canción
+
+Sin abrir REAPER, `prepare_song` procesó la entrega de `Mi Pequeño Sol` a 85 BPM
+con análisis de señal completo:
+
+- encontró 12 stems, un MIDI y una mezcla de referencia;
+- confirmó que los 12 stems son estéreo a 48 kHz y tienen duración coherente;
+- asignó roles y nombres únicos, incluidos `Drums 1`, `Drums 2`,
+  `Drums- OK 1` y `Drums- OK 2`;
+- vinculó el MIDI de guitarra con su stem y confirmó que su reporte de limpieza
+  corresponde al hash actual;
+- no detectó muestras a 0 dBFS ni errores o advertencias de ingreso;
+- generó `sessions/Mi Pequeño Sol/song-manifest.json` con estado `ready`;
+- dejó el plan de REAPER con `execute: false`.
+
+El manifiesto contiene métricas de señal, hashes, política de preservación de
+niveles Suno y todas las rutas de importación, pero no modificó los originales
+ni la sesión abierta.

@@ -44,6 +44,8 @@ La arquitectura y sus límites están en [docs/architecture.md](docs/architectur
 El primer recorrido verificable está en [docs/mvp.md](docs/mvp.md).
 La limpieza reutilizable de MIDI contra un stem está en
 [docs/midi-cleanup.md](docs/midi-cleanup.md).
+La gatera y el manifiesto de sesión están en
+[docs/song-preparation.md](docs/song-preparation.md).
 
 ## Entorno Python reproducible
 
@@ -127,3 +129,19 @@ El servidor MCP expone además `discover_song_media`, `analyze_midi`,
 de sólo lectura; la última conserva los originales y restringe sus salidas a
 `sessions/`. De esta manera el agente puede descubrir, explicar y previsualizar
 antes de generar archivos, sin que REAPER esté abierto.
+
+## Preparación de canción
+
+`preview_song_preparation` y `prepare_song` convierten una entrega de stems en
+un manifiesto validado. Detectan formatos, duración, duplicados, roles, nombres
+de pista y correspondencias MIDI/WAV; opcionalmente calculan métricas completas
+de señal. El resultado incluye un plan de importación deliberadamente marcado
+con `execute: false`:
+
+```powershell
+.\.venv-pampapilot\Scripts\python.exe .\scripts\prepare_song.py `
+  "Mi Pequeño Sol" 85 --analysis-level signal
+```
+
+El manifiesto queda en `sessions/<canción>/song-manifest.json`. Para fuentes de
+Suno conserva niveles relativos y nunca normaliza stems individualmente.
