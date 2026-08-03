@@ -75,6 +75,9 @@ no corta ni repara audio automáticamente.
 El puente 0.23.0 incorpora control dinámico de una resonancia amplia con
 ReaXcomp: propone una única banda de audición, mantiene las otras tres
 transparentes y usa un perfil especialmente suave para Suno.
+El puente 0.24.0 puede aplicar una cadena FX correctiva completa y ordenada en
+una única transacción: Gate, EQ, resonancia, compresión, de-esser y saturación.
+El plan cruza los FX existentes, conserva los ajenos y bloquea ambigüedades.
 
 ## Decisiones iniciales
 
@@ -113,6 +116,8 @@ El cruce con el estado real de REAPER está en
 [docs/production-plan.md](docs/production-plan.md).
 El detector conservador de clics, silencios y bordes está en
 [docs/research/audio-integrity-adapter.md](docs/research/audio-integrity-adapter.md).
+La orquestación de una cadena por pista está en
+[docs/research/producer-chain.md](docs/research/producer-chain.md).
 
 ## Entorno Python reproducible
 

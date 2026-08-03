@@ -113,6 +113,18 @@ Referencias de diseño para carga genérica de presets:
 
 ## Mezcla y edición pendientes
 
+- [x] Planificador de cadena FX por pista, sensible a rol y fuente, con orden
+      limpieza → EQ → resonancia → compresión → de-esser → saturación.
+- [x] Aplicación de hasta seis FX como una sola transacción, preservando FX
+      ajenos y bloqueando duplicados o ReaXcomp ambiguos.
+- [x] Validar en vivo la producer chain 0.24.0 de un paso y su reversión sobre
+      Guitar, preservando ReaFIR y el estado de la pista.
+- [ ] Validar en vivo una cadena orgánica con tres o más procesadores para
+      comprobar orden y rollback conjunto bajo una carga más representativa.
+- [ ] Integrar vocal rider y routing de ambiente como etapas coordinadas pero
+      con transacciones separadas y recibos compuestos.
+- [ ] Implementar render A/B con loudness igualado para la cadena completa.
+
 - [x] Escritura segura de envolvente de volumen por GUID, ligada a WAV/ítem,
       sin sobrescribir puntos existentes y con lectura posterior completa.
 - [ ] Escritura segura de envolvente de paneo.

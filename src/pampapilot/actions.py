@@ -259,6 +259,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Aplica una propuesta aprobada como una única transacción verificable.",
         ),
         ActionSpec(
+            "apply_producer_fx_chain",
+            True,
+            VerificationLevel.STATE,
+            "Aplica una cadena FX ordenada y aprobada como una única transacción.",
+        ),
+        ActionSpec(
             "prepare_mix_listening",
             True,
             VerificationLevel.STATE,

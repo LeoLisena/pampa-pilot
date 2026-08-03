@@ -23,6 +23,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "preview_saturation_proposal",
                 "preview_vocal_rider_proposal",
                 "preview_dynamic_resonance_proposal",
+                "preview_track_producer_chain",
+                "preview_project_track_producer_chain",
                 "preview_audio_integrity",
                 "preview_project_item_audio_integrity",
                 "get_render_settings",
@@ -32,6 +34,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "inspect_track_volume_envelope",
                 "apply_vocal_rider_envelope",
                 "apply_dynamic_resonance_proposal",
+                "apply_project_track_producer_chain",
                 "configure_item_fades",
                 "create_track",
                 "set_track_pan",
@@ -100,6 +103,10 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             tools["preview_dynamic_resonance_proposal"].annotations.read_only_hint
         )
+        self.assertTrue(tools["preview_track_producer_chain"].annotations.read_only_hint)
+        self.assertTrue(
+            tools["preview_project_track_producer_chain"].annotations.read_only_hint
+        )
         self.assertTrue(tools["preview_audio_integrity"].annotations.read_only_hint)
         self.assertTrue(
             tools["preview_project_item_audio_integrity"].annotations.read_only_hint
@@ -114,6 +121,9 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tools["apply_vocal_rider_envelope"].annotations.destructive_hint)
         self.assertFalse(
             tools["apply_dynamic_resonance_proposal"].annotations.destructive_hint
+        )
+        self.assertFalse(
+            tools["apply_project_track_producer_chain"].annotations.destructive_hint
         )
         self.assertTrue(tools["configure_item_fades"].annotations.idempotent_hint)
         self.assertFalse(tools["configure_item_fades"].annotations.destructive_hint)

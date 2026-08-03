@@ -79,3 +79,31 @@ de ReaEQ y ReaComp, mantuvo `fx_count = 2` y volvió a leer de forma independien
 La transacción `bf139559-ca3b-451b-b8b3-769319a9ddac` quedó disponible para
 undo. `state_verified` fue verdadero; `signal_verified` y
 `perceptually_evaluated` permanecieron falsos.
+
+## Producer chain 0.24.0
+
+`preview_project_track_producer_chain` combina los adaptadores especializados,
+ordena sólo los candidatos vigentes y los cruza con la cadena real de REAPER.
+El orden permitido es ReaGate, ReaEQ, resonancia ReaXcomp, ReaComp, de-esser
+ReaXcomp y JS Multi Waveshaper. Una fuente Suno no recibe EQ o compresión por
+rutina; únicamente entran tratamientos con evidencia propia y, opcionalmente,
+saturación artística aprobada.
+
+`apply_project_track_producer_chain` vuelve a calcular audio y estado de REAPER.
+El `chain_id` cambia si cambia el WAV, una regla, un parámetro o un FX existente.
+Hasta seis procesadores se crean o reutilizan en orden dentro de una única
+transacción. Los FX ajenos se conservan; duplicados y ReaXcomp cuyo propósito
+no pueda inferirse bloquean el plan.
+
+Vocal rider y ambiente aparecen como etapas diferidas: el primero escribe una
+envolvente y el segundo crea routing/buses. No se ocultan dentro de la cadena FX
+porque requieren contratos y reversiones diferentes.
+
+### Validación real 0.24.0
+
+La cadena `cffa42fdf5eb81bc6db79bfd` de Guitar preservó el ReaFIR preexistente
+en índice 0 y creó ReaXcomp en índice 1. La respuesta y una consulta posterior
+independiente confirmaron GUID, 51 parámetros, estado online, orden y
+`fx_count=2`. La única transacción se deshizo: Guitar volvió a un FX, el mismo
+ReaFIR, fader -7 dB, paneo central y automatización Trim/Read. El proyecto quedó
+en 14 pistas y 85 BPM. No se modificó ni renderizó el WAV.

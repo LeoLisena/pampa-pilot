@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.23.0"
+local BRIDGE_VERSION = "0.24.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -3314,6 +3314,149 @@ function ACTIONS.apply_processing_chain(params, request_id)
         transaction_request_id = request_id,
       }
     end)
+  return result, observations(true)
+end
+
+function ACTIONS.apply_producer_fx_chain(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, track_index = find_track_by_guid(project, params.track_guid)
+  local chain_id = require_string(params.chain_id, "chain_id", 24)
+  if #chain_id ~= 24 or not chain_id:match("^[0-9a-f]+$") then
+    error("chain_id debe contener 24 caracteres hexadecimales")
+  end
+  local source_sha256 = require_string(params.source_sha256, "source_sha256", 64)
+  if #source_sha256 ~= 64 or not source_sha256:match("^[0-9a-f]+$") then
+    error("source_sha256 debe ser un SHA-256 hexadecimal minúsculo")
+  end
+  if type(params.steps) ~= "table" or #params.steps < 1 or #params.steps > 6 then
+    error("steps debe contener entre una y seis entradas")
+  end
+
+  local definitions = {
+    reagate = { plugin = "ReaGate (Cockos)", fragment = "reagate" },
+    reaeq = { plugin = "ReaEQ (Cockos)", fragment = "reaeq" },
+    dynamic_resonance = { plugin = "ReaXcomp (Cockos)", fragment = "reaxcomp" },
+    reacomp = { plugin = "ReaComp (Cockos)", fragment = "reacomp" },
+    deesser = { plugin = "ReaXcomp (Cockos)", fragment = "reaxcomp" },
+    waveshaper = { plugin = "JS: Multi Waveshaper", fragment = "multi waveshaper" },
+  }
+  local validated, seen_processor, seen_guid = {}, {}, {}
+  local create_count, create_reaxcomp_count = 0, 0
+  for position, raw in ipairs(params.steps) do
+    if type(raw) ~= "table" then error("cada step debe ser un objeto") end
+    local processor = require_string(raw.processor, "processor", 32)
+    local definition = definitions[processor]
+    if not definition then error("procesador no permitido en producer chain") end
+    if seen_processor[processor] then
+      error("procesador duplicado en producer chain: " .. processor)
+    end
+    seen_processor[processor] = true
+    local mode = require_string(raw.mode, "mode", 32)
+    if mode ~= "reuse_existing" and mode ~= "create_new" then
+      error("modo de vinculación no permitido en producer chain")
+    end
+    local fx_guid = nil
+    if mode == "reuse_existing" then
+      fx_guid = require_string(raw.fx_guid, "fx_guid", 64)
+      if seen_guid[fx_guid] then error("un GUID de FX no puede usarse en dos pasos") end
+      seen_guid[fx_guid] = true
+      local fx_index = find_fx_by_guid(track, fx_guid)
+      if processor == "reagate" then require_reagate(track, fx_index)
+      elseif processor == "reaeq" then require_reaeq(track, fx_index)
+      elseif processor == "reacomp" then require_reacomp(track, fx_index)
+      elseif processor == "waveshaper" then require_waveshaper(track, fx_index)
+      else require_reaxcomp(track, fx_index) end
+    else
+      if raw.fx_guid ~= nil then error("create_new no admite fx_guid") end
+      create_count = create_count + 1
+      if definition.fragment == "reaxcomp" then
+        create_reaxcomp_count = create_reaxcomp_count + 1
+      elseif count_fx_by_name_fragment(track, definition.fragment) > 0 then
+        error("la pista ya contiene " .. processor .. "; debe reutilizar su GUID")
+      end
+    end
+    local spec
+    if processor == "reagate" then spec = validate_reagate_parameters(raw.parameters)
+    elseif processor == "reaeq" then spec = validate_reaeq_parameters(raw.parameters)
+    elseif processor == "dynamic_resonance" then
+      spec = validate_dynamic_resonance_parameters(raw.parameters)
+    elseif processor == "reacomp" then spec = validate_reacomp_parameters(raw.parameters)
+    elseif processor == "deesser" then spec = validate_deesser_parameters(raw.parameters)
+    else spec = validate_waveshaper_parameters(raw.parameters) end
+    validated[position] = {
+      processor = processor,
+      mode = mode,
+      fx_guid = fx_guid,
+      plugin = definition.plugin,
+      fragment = definition.fragment,
+      spec = spec,
+    }
+  end
+  if create_reaxcomp_count > 0
+      and count_fx_by_name_fragment(track, "reaxcomp") > 0 then
+    error("la pista ya contiene ReaXcomp; su propósito debe vincularse explícitamente")
+  end
+
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar producer chain " .. chain_id, function()
+      local applied, previous_index = {}, -1
+      for position, step in ipairs(validated) do
+        local fx_index
+        if step.mode == "reuse_existing" then
+          fx_index = find_fx_by_guid(track, step.fx_guid)
+        else
+          local count_before_add = reaper.TrackFX_GetCount(track)
+          fx_index = reaper.TrackFX_AddByName(track, step.plugin, false, -1)
+          if fx_index < 0 then error("REAPER no pudo agregar " .. step.processor) end
+          if reaper.TrackFX_GetCount(track) ~= count_before_add + 1 then
+            error("la cantidad de FX no aumentó exactamente en uno")
+          end
+          local added = read_fx(track, fx_index, false)
+          if not added.name:lower():find(step.fragment, 1, true) then
+            error("el FX creado no tiene la identidad esperada")
+          end
+        end
+        if fx_index <= previous_index then
+          error("los FX existentes no respetan el orden de producer chain")
+        end
+        previous_index = fx_index
+        local fx, detail
+        if step.processor == "reagate" then
+          fx = apply_reagate_parameters(track, fx_index, step.spec, step.fx_guid)
+        elseif step.processor == "reaeq" then
+          detail = apply_reaeq_parameters(track, fx_index, step.spec)
+          fx = read_fx(track, fx_index, true)
+        elseif step.processor == "dynamic_resonance" then
+          fx = apply_dynamic_resonance_parameters(track, fx_index, step.spec, step.fx_guid)
+        elseif step.processor == "reacomp" then
+          fx = apply_reacomp_parameters(track, fx_index, step.spec, step.fx_guid)
+        elseif step.processor == "deesser" then
+          fx = apply_deesser_parameters(track, fx_index, step.spec, step.fx_guid)
+        else
+          fx = apply_waveshaper_parameters(track, fx_index, step.spec, step.fx_guid)
+        end
+        applied[position] = {
+          processor = step.processor,
+          mode = step.mode,
+          fx = fx,
+          detail = detail,
+        }
+      end
+      local track_state = read_track(track, track_index)
+      if track_state.fx_count ~= before_count + create_count then
+        error("la lectura posterior no refleja la producer chain completa")
+      end
+      return {
+        project_ref = ref,
+        chain_id = chain_id,
+        source_sha256 = source_sha256,
+        track = track_state,
+        applied = applied,
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 

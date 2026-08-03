@@ -55,6 +55,10 @@ from .production_plan import (
     build_listening_preparation_payload,
     build_production_plan,
 )
+from .producer_chain import (
+    build_producer_chain_application_payload,
+    build_track_producer_chain,
+)
 from .render_workflow import build_rendered_master_candidate_report
 from .song_preparation import (
     SongPreparationConfig,
@@ -809,6 +813,105 @@ def apply_processing_proposal(
             **application,
         },
         timeout_seconds=30.0,
+    )
+
+
+@mcp.tool(
+    title="Previsualizar cadena automática de una pista",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_track_producer_chain(
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings", "keys"
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    include_artistic_saturation: bool = False,
+) -> dict[str, Any]:
+    """Selecciona y ordena FX sin consultar ni modificar REAPER."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    return build_track_producer_chain(
+        audio_path,
+        role,
+        source_kind,
+        include_artistic_saturation=include_artistic_saturation,
+    )
+
+
+@mcp.tool(
+    title="Previsualizar cadena contra una pista real",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def preview_project_track_producer_chain(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings", "keys"
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    include_artistic_saturation: bool = False,
+) -> dict[str, Any]:
+    """Cruza la propuesta con FX existentes y evita duplicados ambiguos."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    state = _call(
+        "get_track_state",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+    chain = build_track_producer_chain(
+        audio_path,
+        role,
+        source_kind,
+        existing_fx=state["result"]["fx"],
+        include_artistic_saturation=include_artistic_saturation,
+    )
+    chain["project_ref"] = project_ref
+    chain["track_guid"] = track_guid
+    chain["reaper_observations"] = state["observations"]
+    return chain
+
+
+@mcp.tool(
+    title="Aplicar cadena automática aprobada",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+)
+def apply_project_track_producer_chain(
+    project_ref: str,
+    track_guid: Annotated[str, Field(min_length=1, max_length=64)],
+    file_path: Annotated[str, Field(min_length=1, max_length=4096)],
+    role: Literal[
+        "lead_vocal", "backing_vocals", "bass", "drums", "guitar", "strings", "keys"
+    ],
+    source_kind: Literal["suno_stems", "organic_multitrack", "unknown"],
+    approved_chain_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")],
+    include_artistic_saturation: bool = False,
+) -> dict[str, Any]:
+    """Recalcula la cadena vigente y la ejecuta en una sola transacción undo."""
+
+    audio_path = resolve_input_file(file_path, suffixes={".wav"})
+    state = _call(
+        "get_track_state",
+        {"project_ref": project_ref, "track_guid": track_guid},
+    )
+    chain = build_track_producer_chain(
+        audio_path,
+        role,
+        source_kind,
+        existing_fx=state["result"]["fx"],
+        include_artistic_saturation=include_artistic_saturation,
+    )
+    payload = build_producer_chain_application_payload(chain, approved_chain_id)
+    return _call(
+        "apply_producer_fx_chain",
+        {"project_ref": project_ref, "track_guid": track_guid, **payload},
+        timeout_seconds=60.0,
     )
 
 
