@@ -27,6 +27,7 @@ from .agent_context import (
     build_context_update_message,
     build_project_context,
     compact_project_context,
+    load_system_prompt,
     parse_agent_response,
     request_needs_deep_context,
     request_needs_reasoning,
@@ -442,7 +443,7 @@ def _project_names(workspace_root: Path = WORKSPACE_ROOT) -> list[str]:
 
 def _context_revision(context: dict[str, Any]) -> str:
     serialized = json.dumps(
-        context,
+        {"context": context, "system_prompt": load_system_prompt()},
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -869,6 +870,36 @@ def _build_chat_action_plan(
             {"project_ref": project_ref, "track_guid": track["guid"]},
         )
         existing_fx = [dict(item) for item in track_state.result.get("fx", [])]
+        if kind == "adjust_compressor":
+            matches = [
+                fx for fx in existing_fx
+                if "reacomp" in str(fx.get("name", "")).casefold()
+                and "reaxcomp" not in str(fx.get("name", "")).casefold()
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    "El ajuste fino necesita exactamente un ReaComp activo en la pista"
+                )
+            delta = float(action.get("attack_percent_delta", 0.0))
+            if not -75.0 <= delta <= 300.0 or delta == 0.0:
+                raise ValueError("El ajuste relativo de ataque debe estar entre -75% y +300% y no ser cero")
+            operations.append(
+                {
+                    "kind": "adjust_compressor",
+                    "track_guid": str(track["guid"]),
+                    "fx_guid": str(matches[0]["guid"]),
+                    "attack_percent_delta": delta,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": f"Cambiar el tiempo de ataque actual de ReaComp en {delta:+.1f}%",
+                    "reason": "Ajuste relativo sobre la instancia existente, con lectura posterior en REAPER.",
+                }
+            )
+            risks.append("low")
+            continue
         if kind == "filter":
             filter_type = str(action.get("filter_type", ""))
             proposal = build_filter_proposal(
@@ -1090,6 +1121,16 @@ def _execute_chat_action_plan(plan: dict[str, Any]) -> dict[str, Any]:
                 reply = client.call(
                     "apply_track_mix_batch",
                     {"project_ref": project_ref, "items": operation["items"]},
+                )
+            elif kind == "adjust_compressor":
+                reply = client.call(
+                    "adjust_reacomp",
+                    {
+                        "project_ref": project_ref,
+                        "track_guid": operation["track_guid"],
+                        "fx_guid": operation["fx_guid"],
+                        "attack_percent_delta": operation["attack_percent_delta"],
+                    },
                 )
             elif kind == "filter":
                 proposal = operation["proposal"]
@@ -2224,7 +2265,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
         result = await asyncio.to_thread(
             LMStudioClient(runtime.brain()).chat_result,
             messages,
-            max_tokens=1600 if direct_action else 900 if use_reasoning else 450 if deep_context else 220,
+            max_tokens=1600 if direct_action else 900 if use_reasoning else 600,
             reasoning="on" if use_reasoning else "off",
             previous_response_id=None
             if conversation is None
@@ -2232,7 +2273,7 @@ async def chat(value: ChatInput) -> dict[str, Any]:
             store=True,
         )
         response = parse_agent_response(result.content)
-        if direct_action and not response.get("structured"):
+        if not response.get("structured"):
             repair = await asyncio.to_thread(
                 LMStudioClient(runtime.brain()).chat_result,
                 [

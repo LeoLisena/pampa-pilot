@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,48 @@ def test_agent_parser_keeps_only_typed_chat_actions() -> None:
         {"kind": "static_mix", "target": "1 Percussion", "volume_delta_db": -2},
         {"kind": "static_mix", "target": "10 Vocals", "pan": -0.15},
     ]
+
+
+@patch("pampapilot.web_server._source_kind_for_stem", return_value="suno_stems")
+@patch("pampapilot.web_server._stem_descriptor")
+@patch("pampapilot.web_server.BridgeClient")
+@patch("pampapilot.web_server.bridge_project")
+@patch("pampapilot.web_server._project_view")
+def test_relative_compressor_attack_resolves_existing_reacomp(
+    project_view, bridge_project, bridge_client, stem_descriptor, _source
+) -> None:
+    project_view.return_value = {
+        "stems": [{"name": "1 Percussion", "track_name": "Percussion", "role": "percussion"}]
+    }
+    bridge_project.return_value = {
+        "result": {
+            "project_ref": "project.rpp",
+            "tracks": [{"guid": "{PERC}", "name": "Percussion", "volume_db": 0.0}],
+        }
+    }
+    stem_descriptor.return_value = {
+        "name": "1 Percussion", "role": "percussion", "path": "unused.wav"
+    }
+    bridge_client.return_value.call.return_value = SimpleNamespace(
+        result={"fx": [{"guid": "{COMP}", "name": "VST: ReaComp (Cockos)"}]}
+    )
+
+    plan = _build_chat_action_plan(
+        "Song",
+        [{
+            "kind": "adjust_compressor",
+            "target": "1 Percussion",
+            "attack_percent_delta": 10.0,
+        }],
+    )
+
+    assert plan["risk"] == "low"
+    assert plan["operations"] == [{
+        "kind": "adjust_compressor",
+        "track_guid": "{PERC}",
+        "fx_guid": "{COMP}",
+        "attack_percent_delta": 10.0,
+    }]
 
 
 @patch("pampapilot.web_server._source_kind_for_stem", return_value="suno_stems")

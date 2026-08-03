@@ -7,7 +7,7 @@ from pampapilot.actions import ACTION_SPECS, VerificationLevel, require_action
 
 class ActionCatalogTests(unittest.TestCase):
     def test_first_mvp_has_small_explicit_allowlist(self) -> None:
-        self.assertEqual(len(ACTION_SPECS), 58)
+        self.assertEqual(len(ACTION_SPECS), 59)
         self.assertFalse(require_action("health_check").mutates_project)
         self.assertFalse(require_action("discover_project_fx").mutates_project)
         self.assertFalse(require_action("discover_installed_fx").mutates_project)

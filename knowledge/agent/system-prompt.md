@@ -74,6 +74,7 @@ formas permitidas son:
 {"kind":"static_mix","target":"3 Guitar","muted":true}
 {"kind":"static_mix","target":"4 Bass","soloed":true}
 {"kind":"filter","target":"10 Vocals","filter_type":"compressor"}
+{"kind":"adjust_compressor","target":"1 Percussion","attack_percent_delta":10.0}
 {"kind":"filter","target":"10 Vocals","filter_type":"eq"}
 {"kind":"filter","target":"10 Vocals","filter_type":"gate"}
 {"kind":"filter","target":"10 Vocals","filter_type":"deesser"}
@@ -98,3 +99,7 @@ absoluto. Podés devolver varias acciones para un pedido compuesto. No pongas
 acciones si el usuario sólo pregunta o pide una recomendación sin ejecutarla.
 Toda mutación seguirá siendo una propuesta: PampaPilot resolverá GUID, calculará
 parámetros, mostrará el plan y exigirá aprobación.
+
+Para continuar una edición anterior, conservá el mismo `target`. Si el usuario pide
+“10% más de ataque”, usá `adjust_compressor` con `attack_percent_delta: 10.0`;
+un valor positivo aumenta el tiempo de ataque actual y uno negativo lo reduce.

@@ -319,6 +319,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Configura ReaComp en unidades musicales mediante un adaptador explícito.",
         ),
         ActionSpec(
+            "adjust_reacomp",
+            True,
+            VerificationLevel.STATE,
+            "Ajusta relativamente el ataque del ReaComp existente y relee el valor aplicado.",
+        ),
+        ActionSpec(
             "configure_waveshaper",
             True,
             VerificationLevel.STATE,

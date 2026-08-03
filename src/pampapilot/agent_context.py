@@ -27,6 +27,7 @@ DEEP_CONTEXT_TERMS = {
     "medición", "medicion", "resultado", "stem", "verso", "voz",
     "pane", "volumen", "mute", "solo", "bajá", "baja", "subí", "sube", "percu",
     "midi", "render", "reverb", "delay", "rider", "masteriz",
+    "ataque", "attack", "release", "ratio", "umbral", "threshold", "transitorio",
 }
 FACTUAL_ANALYSIS_TERMS = {
     "resultado", "resultados", "hallazgo", "hallazgos", "diagnóstico",
@@ -40,6 +41,7 @@ DIRECT_ACTION_TERMS = {
     "aplic", "agreg", "añad", "baj", "desmute", "limpi", "masteriz",
     "mute", "pane", "poné", "pone", "render", "solo", "sub", "creá",
     "crea", "configur", "automatiz",
+    "ajust", "ataque", "attack", "release", "ratio", "umbral", "threshold",
 }
 
 
@@ -361,6 +363,7 @@ def parse_agent_response(raw: str) -> dict[str, Any]:
                 "static_mix", "filter", "producer_chain", "ambience",
                 "vocal_rider", "section_volume", "mastering", "render",
                 "midi_cleanup", "song_structure", "analyze_project",
+                "adjust_compressor",
             }:
                 continue
             action = {
@@ -371,6 +374,7 @@ def parse_agent_response(raw: str) -> dict[str, Any]:
                     "muted", "soloed", "filter_type", "preset_name",
                     "include_artistic_saturation", "source_kind",
                     "effect_type",
+                    "attack_percent_delta",
                 }
             }
             actions.append(action)

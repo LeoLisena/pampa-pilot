@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.29.2"
+local BRIDGE_VERSION = "0.29.3"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -3263,6 +3263,39 @@ function ACTIONS.configure_reacomp(params, request_id)
     return {
       project_ref = ref,
       fx = fx,
+      transaction_request_id = request_id,
+    }
+  end)
+  return result, observations(true)
+end
+
+function ACTIONS.adjust_reacomp(params, request_id)
+  local project, _, ref = require_project(params)
+  local track = find_track_by_guid(project, params.track_guid)
+  local fx_guid = require_string(params.fx_guid, "fx_guid", 64)
+  local fx_index = find_fx_by_guid(track, fx_guid)
+  require_reacomp(track, fx_index)
+  local percent = require_number(
+    params.attack_percent_delta, "attack_percent_delta", -75.0, 300.0)
+  local parameter_index = find_fx_parameter_by_ident(track, fx_index, "2:_Attack")
+  local ok, formatted = reaper.TrackFX_GetFormattedParamValue(
+    track, fx_index, parameter_index)
+  local previous_ms = ok and parse_formatted_number(formatted, "ms") or nil
+  if previous_ms == nil then error("REAPER no pudo leer el ataque actual de ReaComp") end
+  local target_ms = math.max(0.0, math.min(200.0, previous_ms * (1.0 + percent / 100.0)))
+
+  local result = run_transaction(project, request_id, "ajustar ataque de ReaComp", function()
+    set_numeric_parameter(track, fx_index, "2:_Attack", target_ms, 0.11, "ms")
+    local _, observed_formatted = reaper.TrackFX_GetFormattedParamValue(
+      track, fx_index, parameter_index)
+    local observed_ms = parse_formatted_number(observed_formatted, "ms")
+    return {
+      project_ref = ref,
+      track_guid = params.track_guid,
+      fx = read_fx(track, fx_index, false),
+      requested = { attack_percent_delta = percent },
+      previous = { attack_ms = previous_ms },
+      applied = { attack_ms = observed_ms },
       transaction_request_id = request_id,
     }
   end)

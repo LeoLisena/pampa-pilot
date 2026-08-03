@@ -13,6 +13,7 @@ from pampapilot.agent_context import (
     parse_agent_response,
     request_needs_deep_context,
     request_needs_reasoning,
+    request_is_direct_action,
 )
 
 
@@ -102,6 +103,26 @@ class AgentContextTests(unittest.TestCase):
         )
         self.assertEqual(compact["stem_count"], 1)
         self.assertNotIn("lyrics", compact)
+
+    def test_compressor_parameter_followup_is_a_direct_deep_action(self):
+        message = "quedaría mejor un 10% más de ataque"
+        self.assertTrue(request_needs_deep_context(message))
+        self.assertTrue(request_is_direct_action(message))
+
+    def test_parses_relative_compressor_adjustment(self):
+        response = parse_agent_response(
+            '{"message":"Ajusto el ataque","proposal":null,"actions":['
+            '{"kind":"adjust_compressor","target":"1 Percussion",'
+            '"attack_percent_delta":10.0}]}'
+        )
+        self.assertEqual(
+            response["actions"],
+            [{
+                "kind": "adjust_compressor",
+                "target": "1 Percussion",
+                "attack_percent_delta": 10.0,
+            }],
+        )
 
     def test_context_update_explicitly_preserves_same_project(self):
         message = build_context_update_message(
