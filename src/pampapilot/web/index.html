@@ -92,8 +92,9 @@
       <label>Modelo<input id="brain-model" name="model" type="text" placeholder="google/gemma-4-31b"></label>
       <label>Seguridad<select id="brain-auth" name="authentication_required"><option value="true">Token requerido (recomendado)</option><option value="false">Servidor sin autenticación</option></select></label>
       <label>Tiempo máximo de respuesta<select id="brain-timeout" name="timeout_seconds"><option value="60">60 segundos</option><option value="120">120 segundos</option><option value="180" selected>180 segundos (recomendado)</option><option value="300">300 segundos</option></select></label>
-      <label>Token de LM Studio<input id="brain-token" name="token" type="password" autocomplete="new-password" placeholder="No se guarda en disco"></label>
-      <p class="form-hint">El token vive sólo en la memoria del servidor mientras PampaPilot está abierto.</p>
+      <label>Token de LM Studio<input id="brain-token" name="token" type="password" autocomplete="new-password" placeholder="Ingresá el token para configurarlo"></label>
+      <label class="checkbox-field"><input id="remember-token" type="checkbox"><span>Recordar token cifrado para próximos inicios</span></label>
+      <p class="form-hint">Si lo recordás, Windows lo cifra para este usuario mediante DPAPI. PampaPilot nunca devuelve el token al navegador.</p>
       <div class="modal-actions"><button type="button" class="secondary-button close-dialog">Cancelar</button><button class="primary-button" type="submit">Guardar y probar</button></div>
       <p class="form-result" id="settings-result"></p>
     </form>

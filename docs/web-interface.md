@@ -44,6 +44,10 @@ En **Configuración** se definen:
 - tiempo máximo de generación, 180 segundos de forma predeterminada;
 - token, que se conserva sólo en memoria hasta cerrar PampaPilot.
 
+Opcionalmente, **Recordar token** guarda un blob cifrado por Windows DPAPI bajo
+`.runtime/secrets/`. Sólo el mismo usuario de Windows puede descifrarlo. El token
+en claro nunca forma parte de respuestas HTTP, logs ni archivos versionados.
+
 El adaptador usa la API nativa `/api/v1/models` y `/api/v1/chat`. En conversación
 simple desactiva el razonamiento; en análisis musical lo habilita. El LLM recibe un system
 prompt versionado, contexto sin rutas locales, letra, secciones e inventario de

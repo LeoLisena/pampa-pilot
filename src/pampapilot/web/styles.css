@@ -121,6 +121,8 @@ dialog::backdrop { background: #02070cbb; backdrop-filter: blur(4px); }
 .modal-card label { display: grid; gap: 7px; color: #b9c8d2; font-size: 12px; margin-bottom: 14px; }
 .modal-card input, .modal-card select, .modal-card textarea { width: 100%; padding: 11px 12px; color: white; background: #0b151e; border: 1px solid #334653; border-radius: 7px; outline: none; }
 .modal-card input:focus, .modal-card select:focus, .modal-card textarea:focus { border-color: #408ed4; box-shadow: 0 0 0 3px #2e7fc326; }
+.modal-card .checkbox-field { display: flex; grid-column: 1 / -1; align-items: center; gap: 9px; cursor: pointer; }
+.modal-card .checkbox-field input { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .file-field input { padding: 8px; }
 .form-hint { color: var(--muted); font-size: 11px; margin: -3px 0 15px; }

@@ -34,6 +34,7 @@ from .lmstudio_client import (
     normalize_base_url,
 )
 from .media_discovery import WORKSPACE_ROOT
+from .secret_store import SecretStoreError, WindowsSecretStore
 
 
 WEB_ROOT = Path(__file__).with_name("web")
@@ -47,6 +48,7 @@ class BrainSettingsInput(BaseModel):
     token: Annotated[str | None, Field(max_length=4096)] = None
     authentication_required: bool = True
     timeout_seconds: Annotated[float, Field(ge=15, le=300)] = 180.0
+    remember_token: bool = False
 
 
 class HistoryMessage(BaseModel):
@@ -70,12 +72,17 @@ class RuntimeState:
 
     def __init__(self) -> None:
         self._lock = RLock()
+        self._secret_store = WindowsSecretStore()
+        try:
+            persisted_token = self._secret_store.load()
+        except SecretStoreError:
+            persisted_token = ""
         self._brain = LMStudioConfig(
             base_url=os.environ.get(
                 "PAMPAPILOT_LMSTUDIO_URL", "http://127.0.0.1:1234"
             ),
             model=os.environ.get("PAMPAPILOT_LMSTUDIO_MODEL", ""),
-            token=os.environ.get("PAMPAPILOT_LMSTUDIO_TOKEN", ""),
+            token=os.environ.get("PAMPAPILOT_LMSTUDIO_TOKEN", persisted_token),
             authentication_required=os.environ.get(
                 "PAMPAPILOT_LMSTUDIO_REQUIRE_AUTH", "true"
             ).casefold()
@@ -97,6 +104,15 @@ class RuntimeState:
             token = self._brain.token if value.token is None else value.token.strip()
             if not value.authentication_required and value.token is None:
                 token = ""
+            if value.remember_token:
+                if not token:
+                    raise ValueError("Ingrese un token antes de recordarlo")
+                try:
+                    self._secret_store.save(token)
+                except SecretStoreError as exc:
+                    raise ValueError(str(exc)) from exc
+            else:
+                self._secret_store.clear()
             self._brain = replace(
                 self._brain,
                 base_url=value.base_url.strip().rstrip("/"),
@@ -116,6 +132,7 @@ class RuntimeState:
             "authentication_configured": bool(config.token),
             "authentication_required": config.authentication_required,
             "timeout_seconds": config.timeout_seconds,
+            "token_persisted": self._secret_store.exists(),
         }
 
     def add_proposal(self, proposal: dict[str, Any]) -> str:

@@ -233,7 +233,7 @@ $('#settings-form').addEventListener('submit', async event => {
   try {
     const result = await api('/api/settings/brain', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true', timeout_seconds: Number($('#brain-timeout').value)})
+      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true', timeout_seconds: Number($('#brain-timeout').value), remember_token: $('#remember-token').checked})
     });
     $('#brain-token').value = '';
     resultElement.textContent = result.status.connected ? 'Conexión correcta.' : `Configuración guardada: ${result.status.error}`;
@@ -277,6 +277,7 @@ async function loadSettings() {
     $('#brain-model').value = settings.model;
     $('#brain-auth').value = settings.authentication_required ? 'true' : 'false';
     $('#brain-timeout').value = String(settings.timeout_seconds || 180);
+    $('#remember-token').checked = Boolean(settings.token_persisted);
   } catch { /* defaults remain visible */ }
 }
 

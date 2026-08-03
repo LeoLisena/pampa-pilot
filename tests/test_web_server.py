@@ -22,6 +22,7 @@ class WebServerTests(unittest.TestCase):
         self.assertNotIn("token", response.json())
         self.assertTrue(response.json()["authentication_required"])
         self.assertEqual(response.json()["timeout_seconds"], 180.0)
+        self.assertIn("token_persisted", response.json())
 
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")
