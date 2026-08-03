@@ -25,6 +25,8 @@ DEEP_CONTEXT_TERMS = {
     "filtro", "frecuencia", "guitarra", "letra", "master", "mezcla",
     "mejora", "problema", "producción", "produccion", "sección", "seccion",
     "medición", "medicion", "resultado", "stem", "verso", "voz",
+    "pane", "volumen", "mute", "solo", "bajá", "baja", "subí", "sube", "percu",
+    "midi", "render", "reverb", "delay", "rider", "masteriz",
 }
 FACTUAL_ANALYSIS_TERMS = {
     "resultado", "resultados", "hallazgo", "hallazgos", "diagnóstico",
@@ -32,6 +34,12 @@ FACTUAL_ANALYSIS_TERMS = {
 }
 PROPOSAL_TERMS = {
     "aplic", "cambi", "correg", "mejor", "proces", "propon", "recomend",
+    "baj", "sub", "pane", "mute", "solo",
+}
+DIRECT_ACTION_TERMS = {
+    "aplic", "agreg", "añad", "baj", "desmute", "limpi", "masteriz",
+    "mute", "pane", "poné", "pone", "render", "solo", "sub", "creá",
+    "crea", "configur", "automatiz",
 }
 
 
@@ -174,6 +182,37 @@ def request_needs_reasoning(user_message: str) -> bool:
     return not factual or asks_for_action
 
 
+def request_is_direct_action(user_message: str) -> bool:
+    normalized = user_message.casefold()
+    return any(term in normalized for term in DIRECT_ACTION_TERMS)
+
+
+def action_project_context(project_context: Mapping[str, Any]) -> dict[str, Any]:
+    """Small exact-name catalog for deterministic intent translation."""
+
+    song = project_context.get("song", {})
+    stems = project_context.get("stems", [])
+    lyrics = project_context.get("lyrics", {})
+    return {
+        "song": dict(song) if isinstance(song, Mapping) else {},
+        "stems": [
+            {
+                "name": stem.get("name"),
+                "role": stem.get("role"),
+                "source_kind": stem.get("source_kind"),
+            }
+            for stem in stems
+            if isinstance(stem, Mapping)
+        ],
+        "midi_files": list(project_context.get("midi_files", [])),
+        "sections": list(lyrics.get("sections", []))
+        if isinstance(lyrics, Mapping)
+        else [],
+        "verification": dict(project_context.get("verification", {})),
+        "context_level": "action",
+    }
+
+
 def compact_project_context(project_context: Mapping[str, Any]) -> dict[str, Any]:
     """Keep orientation data for casual chat without sending lyrics or file lists."""
 
@@ -314,8 +353,30 @@ def parse_agent_response(raw: str) -> dict[str, Any]:
                     if isinstance(change, Mapping)
                 ],
             }
+    raw_actions = decoded.get("actions", [])
+    actions = []
+    if isinstance(raw_actions, list):
+        for item in raw_actions[:12]:
+            if not isinstance(item, Mapping) or item.get("kind") not in {
+                "static_mix", "filter", "producer_chain", "ambience",
+                "vocal_rider", "section_volume", "mastering", "render",
+                "midi_cleanup", "song_structure", "analyze_project",
+            }:
+                continue
+            action = {
+                str(key): value
+                for key, value in item.items()
+                if key in {
+                    "kind", "target", "volume_delta_db", "volume_db", "pan",
+                    "muted", "soloed", "filter_type", "preset_name",
+                    "include_artistic_saturation", "source_kind",
+                    "effect_type",
+                }
+            }
+            actions.append(action)
     return {
         "message": str(decoded["message"])[:8_000],
         "proposal": proposal,
+        "actions": actions,
         "structured": True,
     }

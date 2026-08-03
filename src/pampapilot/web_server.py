@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .agent_context import (
+    action_project_context,
     build_agent_messages,
     build_context_update_message,
     build_project_context,
@@ -28,6 +29,11 @@ from .agent_context import (
     parse_agent_response,
     request_needs_deep_context,
     request_needs_reasoning,
+    request_is_direct_action,
+)
+from .ambience_proposal import (
+    build_ambience_application_payload,
+    propose_ambience,
 )
 from .bridge_client import BridgeClient
 from .lmstudio_client import (
@@ -37,16 +43,33 @@ from .lmstudio_client import (
     normalize_base_url,
 )
 from .media_discovery import WORKSPACE_ROOT, discover_song_media
+from .midi_cleanup import preview_cleanup, run_cleanup
+from .mastering_proposal import (
+    build_mastering_application_payload,
+    build_mastering_proposal,
+)
+from .mastering_qc import build_master_delivery_qc
 from .project_analysis import (
     analyze_project_media,
     source_overrides_from_metadata,
 )
+from .render_workflow import build_rendered_master_candidate_report
 from .secret_store import SecretStoreError, WindowsSecretStore
+from .section_volume import (
+    build_section_volume_application_payload,
+    build_section_volume_proposal,
+)
+from .song_structure import build_structure_region_payload
+from .vocal_rider import build_vocal_rider_proposal
 from .web_actions import (
+    apply_filter_proposal,
     apply_producer_chain,
     bridge_project,
+    build_filter_proposal,
     capability_catalog,
+    filter_bindings,
     match_reaper_track,
+    normalize_track_name,
     track_producer_chain,
 )
 
@@ -63,6 +86,7 @@ class BrainSettingsInput(BaseModel):
     authentication_required: bool = True
     timeout_seconds: Annotated[float, Field(ge=15, le=300)] = 180.0
     remember_token: bool = False
+    approval_mode: Literal["manual", "low_risk", "all"] = "manual"
 
 
 class HistoryMessage(BaseModel):
@@ -96,6 +120,24 @@ class ApplyChainInput(StemActionInput):
     approved_chain_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
 
 
+class FilterInput(StemActionInput):
+    filter_type: Literal[
+        "eq",
+        "compressor",
+        "gate",
+        "deesser",
+        "dynamic_resonance",
+        "saturation",
+        "tuning",
+    ]
+    preset_name: Annotated[str, Field(max_length=128)] = "pampapilota#"
+
+
+class ApplyFilterInput(FilterInput):
+    approved_proposal_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
+    fx_guid: Annotated[str | None, Field(min_length=1, max_length=64)] = None
+
+
 class StaticMixInput(BaseModel):
     stem_name: Annotated[str, Field(min_length=1, max_length=256)]
     volume_db: Annotated[float | None, Field(ge=-60.0, le=12.0)] = None
@@ -109,33 +151,86 @@ class UndoInput(BaseModel):
     transaction_request_id: Annotated[str, Field(min_length=1, max_length=64)]
 
 
+class UndoPlanInput(BaseModel):
+    project_ref: Annotated[str, Field(min_length=1, max_length=4096)]
+    transaction_request_ids: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=64)]],
+        Field(min_length=1, max_length=64),
+    ]
+
+
 class RuntimeState:
     """Process-local state; secrets never appear in API responses or plain text."""
 
     def __init__(self) -> None:
         self._lock = RLock()
         self._secret_store = WindowsSecretStore()
+        self._settings_path = WORKSPACE_ROOT / ".runtime" / "web-settings.json"
+        persisted_settings = self._load_settings()
         try:
             persisted_token = self._secret_store.load()
         except SecretStoreError:
             persisted_token = ""
         self._brain = LMStudioConfig(
             base_url=os.environ.get(
-                "PAMPAPILOT_LMSTUDIO_URL", "http://127.0.0.1:1234"
+                "PAMPAPILOT_LMSTUDIO_URL",
+                str(persisted_settings.get("base_url", "http://127.0.0.1:1234")),
             ),
-            model=os.environ.get("PAMPAPILOT_LMSTUDIO_MODEL", ""),
+            model=os.environ.get(
+                "PAMPAPILOT_LMSTUDIO_MODEL", str(persisted_settings.get("model", ""))
+            ),
             token=os.environ.get("PAMPAPILOT_LMSTUDIO_TOKEN", persisted_token),
-            authentication_required=os.environ.get(
-                "PAMPAPILOT_LMSTUDIO_REQUIRE_AUTH", "true"
-            ).casefold()
-            not in {"0", "false", "no"},
-            timeout_seconds=float(
-                os.environ.get("PAMPAPILOT_LMSTUDIO_TIMEOUT_SECONDS", "180")
+            authentication_required=(
+                os.environ.get("PAMPAPILOT_LMSTUDIO_REQUIRE_AUTH", "").casefold()
+                not in {"0", "false", "no"}
+                if os.environ.get("PAMPAPILOT_LMSTUDIO_REQUIRE_AUTH") is not None
+                else bool(persisted_settings.get("authentication_required", True))
             ),
+            timeout_seconds=float(
+                os.environ.get(
+                    "PAMPAPILOT_LMSTUDIO_TIMEOUT_SECONDS",
+                    str(persisted_settings.get("timeout_seconds", 180)),
+                )
+            ),
+        )
+        configured_approval = os.environ.get("PAMPAPILOT_APPROVAL_MODE", "").casefold()
+        stored_approval = persisted_settings.get("approval_mode", "manual")
+        self._approval_mode = (
+            configured_approval
+            if configured_approval in {"manual", "low_risk", "all"}
+            else str(stored_approval)
+            if stored_approval in {"manual", "low_risk", "all"}
+            else "manual"
         )
         self._proposals: dict[str, dict[str, Any]] = {}
         self._conversations: dict[tuple[str, str], dict[str, str]] = {}
         self._activity: list[dict[str, Any]] = []
+
+    def _load_settings(self) -> dict[str, Any]:
+        try:
+            decoded = json.loads(self._settings_path.read_text(encoding="utf-8"))
+            return dict(decoded) if isinstance(decoded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _save_settings(self) -> None:
+        self._settings_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._settings_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "base_url": self._brain.base_url,
+                    "model": self._brain.model,
+                    "authentication_required": self._brain.authentication_required,
+                    "timeout_seconds": self._brain.timeout_seconds,
+                    "approval_mode": self._approval_mode,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(self._settings_path)
 
     def brain(self) -> LMStudioConfig:
         with self._lock:
@@ -164,6 +259,8 @@ class RuntimeState:
                 authentication_required=value.authentication_required,
                 timeout_seconds=value.timeout_seconds,
             ).validated()
+            self._approval_mode = value.approval_mode
+            self._save_settings()
             return self._brain
 
     def public_brain(self) -> dict[str, Any]:
@@ -176,16 +273,21 @@ class RuntimeState:
             "authentication_required": config.authentication_required,
             "timeout_seconds": config.timeout_seconds,
             "token_persisted": self._secret_store.exists(),
+            "approval_mode": self._approval_mode,
         }
 
-    def add_proposal(self, proposal: dict[str, Any]) -> str:
+    def approval_mode(self) -> str:
+        with self._lock:
+            return self._approval_mode
+
+    def add_proposal(self, proposal: dict[str, Any], *, executable: bool = False) -> str:
         proposal_id = str(uuid4())
         with self._lock:
             self._proposals[proposal_id] = {
                 **proposal,
                 "proposal_id": proposal_id,
                 "status": "pending",
-                "executable": False,
+                "executable": executable,
             }
         return proposal_id
 
@@ -211,23 +313,27 @@ class RuntimeState:
                 "context_revision": context_revision,
             }
 
-    def decide(self, proposal_id: str, decision: str) -> dict[str, Any]:
+    def proposal(self, proposal_id: str) -> dict[str, Any]:
         with self._lock:
             proposal = self._proposals.get(proposal_id)
             if proposal is None:
                 raise KeyError(proposal_id)
-            if decision == "preview":
-                return dict(proposal)
-            if decision == "apply":
-                return {
-                    **proposal,
-                    "status": "awaiting_deterministic_mapping",
-                    "message": (
-                        "La propuesta todavía no es una orden ejecutable. "
-                        "PampaPilot no modificó REAPER."
-                    ),
-                }
+            return dict(proposal)
+
+    def reject(self, proposal_id: str) -> dict[str, Any]:
+        with self._lock:
+            proposal = self._proposals.get(proposal_id)
+            if proposal is None:
+                raise KeyError(proposal_id)
             proposal["status"] = "rejected"
+            return dict(proposal)
+
+    def mark_proposal(self, proposal_id: str, **updates: Any) -> dict[str, Any]:
+        with self._lock:
+            proposal = self._proposals.get(proposal_id)
+            if proposal is None:
+                raise KeyError(proposal_id)
+            proposal.update(updates)
             return dict(proposal)
 
     def record_activity(self, entry: dict[str, Any]) -> None:
@@ -307,6 +413,84 @@ def _write_project_metadata(name: str, metadata: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _load_song_regions(name: str) -> list[dict[str, Any]]:
+    analysis_dir = WORKSPACE_ROOT / "sessions" / name / "analysis"
+    candidates = sorted(
+        analysis_dir.glob("song-structure-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    candidates.extend(
+        path
+        for path in (analysis_dir / "all-in-one-structure.json",)
+        if path.is_file() and path not in candidates
+    )
+    for path in candidates:
+        try:
+            decoded = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        regions = decoded.get("regions") if isinstance(decoded, dict) else None
+        if isinstance(regions, list) and len(regions) >= 2:
+            return [dict(region) for region in regions if isinstance(region, dict)]
+    raise FileNotFoundError(
+        "No hay una estructura temporal aprobada para calcular volumen por secciones"
+    )
+
+
+def _load_song_structure(name: str) -> dict[str, Any]:
+    analysis_dir = WORKSPACE_ROOT / "sessions" / name / "analysis"
+    candidates = sorted(
+        analysis_dir.glob("song-structure-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            decoded = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(decoded, dict)
+            and decoded.get("kind") == "pampapilot_song_structure_proposal"
+            and isinstance(decoded.get("regions"), list)
+        ):
+            return dict(decoded)
+    raise FileNotFoundError("No existe una propuesta temporal de estructura para aplicar")
+
+
+def _load_latest_master_report(name: str) -> dict[str, Any]:
+    render_dir = WORKSPACE_ROOT / "sessions" / name / "renders"
+    candidates = sorted(
+        render_dir.glob("*.report.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            decoded = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(decoded, dict):
+            continue
+        report = decoded.get("file_report", decoded)
+        if isinstance(report, dict) and report.get("kind") == "pampapilot_master_delivery_qc":
+            return dict(report)
+    raise FileNotFoundError(
+        "No existe un render candidato con informe de entrega para calcular mastering"
+    )
+
+
+def _next_master_candidate_path(name: str) -> Path:
+    render_dir = WORKSPACE_ROOT / "sessions" / name / "renders"
+    render_dir.mkdir(parents=True, exist_ok=True)
+    for index in range(1, 10_000):
+        candidate = render_dir / f"{name} - master-candidate-{index:03d}.wav"
+        if not candidate.exists() and not candidate.with_suffix(".report.json").exists():
+            return candidate.resolve()
+    raise FileExistsError("No queda un nombre libre para el próximo candidato de master")
+
+
 def _stem_descriptor(name: str, stem_name: str) -> dict[str, Any]:
     project = _project_view(name)
     stem = next(
@@ -354,6 +538,651 @@ def _connected_stem(
             f"No pude vincular {stem_name} con una única pista del proyecto abierto en REAPER"
         )
     return stem, state, track
+
+
+_CHAT_ROLE_ALIASES = {
+    "percu": {"percussion"},
+    "percusion": {"percussion"},
+    "bateria": {"drums"},
+    "drums": {"drums"},
+    "lead": {"lead_vocal"},
+    "lead vocal": {"lead_vocal"},
+    "voz": {"lead_vocal"},
+    "voz principal": {"lead_vocal"},
+    "coros": {"backing_vocals", "choir"},
+    "bajo": {"bass"},
+    "guitarra": {"guitar"},
+}
+
+
+def _resolve_chat_stem(project: dict[str, Any], target: str) -> dict[str, Any]:
+    normalized = normalize_track_name(target)
+    exact = [
+        stem
+        for stem in project["stems"]
+        if normalized
+        in {
+            normalize_track_name(str(stem.get("name", ""))),
+            normalize_track_name(str(stem.get("track_name", ""))),
+        }
+    ]
+    if len(exact) == 1:
+        return dict(exact[0])
+    alias_roles = _CHAT_ROLE_ALIASES.get(target.strip().casefold(), set())
+    by_role = [stem for stem in project["stems"] if stem.get("role") in alias_roles]
+    if len(by_role) == 1:
+        return dict(by_role[0])
+    if len(exact) > 1 or len(by_role) > 1:
+        raise ValueError(f"'{target}' identifica más de una pista; usá el nombre exacto")
+    raise ValueError(f"No existe una pista única que corresponda a '{target}'")
+
+
+def _chat_track(
+    stem: dict[str, Any], tracks: list[dict[str, Any]]
+) -> dict[str, Any]:
+    track = match_reaper_track(
+        tracks,
+        str(stem.get("track_name", "")),
+        str(stem.get("name", "")),
+    )
+    if track is None:
+        raise ValueError(
+            f"No pude vincular {stem['name']} con una única pista del proyecto abierto"
+        )
+    return track
+
+
+def _risk_rank(value: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(value, 2)
+
+
+def _build_chat_action_plan(
+    project_name: str, raw_actions: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Resolve model output into a closed, deterministic action plan."""
+
+    mutating = [action for action in raw_actions if action.get("kind") != "analyze_project"]
+    if not mutating:
+        raise ValueError("El pedido no contiene una acción de REAPER para previsualizar")
+    if any(action.get("kind") == "render" for action in mutating) and len(mutating) != 1:
+        raise ValueError("El render debe ser una acción terminal separada para conservar trazabilidad")
+    project = _project_view(project_name)
+    needs_bridge = any(action.get("kind") != "midi_cleanup" for action in mutating)
+    if needs_bridge:
+        bridge_state = bridge_project(BridgeClient(timeout_seconds=8.0))
+        result = dict(bridge_state["result"])
+        project_ref = str(result["project_ref"])
+        tracks = [dict(track) for track in result.get("tracks", [])]
+    else:
+        project_ref = ""
+        tracks = []
+    operations: list[dict[str, Any]] = []
+    changes: list[dict[str, str]] = []
+    risks: list[str] = []
+    mix_by_guid: dict[str, dict[str, Any]] = {}
+
+    for action in mutating:
+        kind = str(action.get("kind"))
+        if kind == "song_structure":
+            proposal = _load_song_structure(project_name)
+            payload = build_structure_region_payload(
+                proposal, str(proposal["structure_id"])
+            )
+            operations.append(
+                {"kind": "song_structure", "proposal": proposal, "payload": payload}
+            )
+            changes.append(
+                {
+                    "target": "Línea de tiempo",
+                    "action": f"Reemplazar regiones de PampaPilot por {len(proposal['regions'])} secciones analizadas",
+                    "reason": "Usar la última propuesta temporal auditable guardada para la canción.",
+                }
+            )
+            risks.append("medium")
+            continue
+        if kind == "midi_cleanup":
+            discovery = discover_song_media(project_name)
+            pairs = [dict(pair) for pair in discovery.get("suggested_pairs", [])]
+            requested = normalize_track_name(str(action.get("target", "")))
+            if requested:
+                pairs = [
+                    pair
+                    for pair in pairs
+                    if requested
+                    in {
+                        normalize_track_name(Path(str(pair["midi"])).name),
+                        normalize_track_name(Path(str(pair["midi"])).stem),
+                        normalize_track_name(Path(str(pair["audio"])).stem),
+                    }
+                ]
+            if len(pairs) != 1:
+                raise ValueError("La limpieza MIDI necesita un único par MIDI/WAV identificable")
+            midi_path = Path(str(pairs[0]["midi"])).resolve()
+            audio_path = Path(str(pairs[0]["audio"])).resolve()
+            audio_role = str(_stem_descriptor(project_name, audio_path.stem)["role"])
+            profile = {
+                "guitar": "guitar",
+                "bass": "bass",
+                "keys": "piano",
+                "drums": "drums",
+                "percussion": "drums",
+            }.get(audio_role, "generic")
+            bpm = float(project.get("tempo_bpm") or 0.0)
+            preview = preview_cleanup(midi_path, audio_path, bpm=bpm, profile=profile)
+            output_directory = Path(str(discovery["suggested_output_directory"])).resolve()
+            operations.append(
+                {
+                    "kind": "midi_cleanup",
+                    "midi_path": str(midi_path),
+                    "audio_path": str(audio_path),
+                    "output_directory": str(output_directory),
+                    "bpm": bpm,
+                    "profile": profile,
+                }
+            )
+            safe = preview.get("clean_safe", {}).get("summary", {})
+            reconstructed = preview.get("reconstructed", {}).get("summary", {})
+            changes.append(
+                {
+                    "target": midi_path.name,
+                    "action": (
+                        f"Generar variante segura ({safe.get('note_count', '?')} notas) y "
+                        f"reconstruida ({reconstructed.get('note_count', '?')} notas)"
+                    ),
+                    "reason": "Análisis MIDI/WAV conservador; los originales no se modifican.",
+                }
+            )
+            risks.append("medium")
+            continue
+        if kind == "render":
+            output_path = _next_master_candidate_path(project_name)
+            operations.append(
+                {
+                    "kind": "render",
+                    "output_file": str(output_path),
+                    "sample_rate_hz": 48_000,
+                }
+            )
+            changes.append(
+                {
+                    "target": "Master",
+                    "action": f"Renderizar WAV 24-bit/48 kHz: {output_path.name}",
+                    "reason": "Crear un candidato nuevo, medible y sin sobrescribir archivos existentes.",
+                }
+            )
+            risks.append("high")
+            continue
+        if kind == "mastering":
+            file_report = _load_latest_master_report(project_name)
+            proposal = build_mastering_proposal(file_report)
+            if proposal.get("review_status") != "user_approval_required":
+                raise ValueError("El último render medido no necesita una acción automática de mastering")
+            master_state = BridgeClient(timeout_seconds=8.0).call(
+                "get_master_track_state", {"project_ref": project_ref}
+            )
+            matches = [
+                fx
+                for fx in master_state.result.get("fx", [])
+                if "realimit" in str(fx.get("name", "")).casefold()
+            ]
+            if len(matches) > 1:
+                raise ValueError("Hay más de un ReaLimit en el master; elegí la instancia manualmente")
+            fx_guid = str(matches[0]["guid"]) if len(matches) == 1 else None
+            payload = build_mastering_application_payload(
+                proposal, str(proposal["proposal_id"]), fx_guid
+            )
+            step = proposal["chain"][0]
+            operations.append(
+                {"kind": "mastering", "proposal": proposal, "payload": payload}
+            )
+            changes.append(
+                {
+                    "target": "Master",
+                    "action": (
+                        f"ReaLimit: techo {step['parameters']['ceiling_db']:+.2f} dB, "
+                        f"release {step['parameters']['release_ms']:.0f} ms"
+                    ),
+                    "reason": "Propuesta ligada al último render candidato y su QC de entrega.",
+                }
+            )
+            risks.append("medium")
+            continue
+        target = str(action.get("target", "")).strip()
+        stem = _resolve_chat_stem(project, target)
+        track = _chat_track(stem, tracks)
+        stem_descriptor = _stem_descriptor(project_name, str(stem["name"]))
+        source_kind = str(action.get("source_kind") or _source_kind_for_stem(project_name, stem_descriptor))
+
+        if kind == "static_mix":
+            item = mix_by_guid.setdefault(
+                str(track["guid"]),
+                {"track_guid": str(track["guid"]), "stem_name": str(stem["name"])},
+            )
+            descriptions: list[str] = []
+            if "volume_delta_db" in action:
+                delta = float(action["volume_delta_db"])
+                if not -24.0 <= delta <= 24.0:
+                    raise ValueError("El cambio relativo de volumen excede ±24 dB")
+                starting_db = float(item.get("volume_db", track["volume_db"]))
+                target_db = max(-60.0, min(12.0, starting_db + delta))
+                item["volume_db"] = round(target_db, 4)
+                descriptions.append(f"volumen {delta:+.2f} dB → {target_db:.2f} dB")
+            if "volume_db" in action:
+                target_db = float(action["volume_db"])
+                if not -60.0 <= target_db <= 12.0:
+                    raise ValueError("El volumen absoluto debe estar entre -60 y +12 dB")
+                item["volume_db"] = target_db
+                descriptions.append(f"volumen → {target_db:.2f} dB")
+            if "pan" in action:
+                pan = float(action["pan"])
+                if not -1.0 <= pan <= 1.0:
+                    raise ValueError("El paneo debe estar entre -1 y 1")
+                item["pan"] = pan
+                descriptions.append(f"paneo → {pan:+.2f}")
+            if "muted" in action:
+                if not isinstance(action["muted"], bool):
+                    raise ValueError("muted debe ser booleano")
+                item["muted"] = action["muted"]
+                descriptions.append("mute activado" if action["muted"] else "mute desactivado")
+            if "soloed" in action:
+                if not isinstance(action["soloed"], bool):
+                    raise ValueError("soloed debe ser booleano")
+                item["soloed"] = action["soloed"]
+                descriptions.append("solo activado" if action["soloed"] else "solo desactivado")
+            if not descriptions:
+                raise ValueError(f"La acción de mezcla para {target} no contiene cambios")
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": ", ".join(descriptions),
+                    "reason": "Pedido explícito del usuario; se verificará por lectura posterior.",
+                }
+            )
+            risks.append("low")
+            continue
+
+        track_state = BridgeClient(timeout_seconds=8.0).call(
+            "get_track_state",
+            {"project_ref": project_ref, "track_guid": track["guid"]},
+        )
+        existing_fx = [dict(item) for item in track_state.result.get("fx", [])]
+        if kind == "filter":
+            filter_type = str(action.get("filter_type", ""))
+            proposal = build_filter_proposal(
+                Path(stem_descriptor["path"]),
+                str(stem_descriptor["role"]),
+                source_kind,
+                filter_type,
+                preset_name=str(action.get("preset_name", "pampapilota#")),
+            )
+            binding = filter_bindings(proposal, existing_fx)
+            if not proposal["can_approve"]:
+                raise ValueError(f"{proposal['title']}: {proposal['reason']}")
+            selected_guid = None
+            if binding["status"] == "selection_required":
+                selected_guid = "__create_new__"
+            operations.append(
+                {
+                    "kind": "filter",
+                    "stem_name": stem["name"],
+                    "track_guid": track["guid"],
+                    "source_kind": source_kind,
+                    "proposal": proposal,
+                    "existing_fx": existing_fx,
+                    "selected_fx_guid": selected_guid,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": f"Aplicar {proposal['title']} con parámetros calculados",
+                    "reason": (
+                        f"{proposal['reason']} Se creará una instancia nueva para no alterar un FX ambiguo."
+                        if selected_guid == "__create_new__"
+                        else str(proposal["reason"])
+                    ),
+                }
+            )
+            risks.append("medium" if filter_type == "tuning" else "low")
+        elif kind == "ambience":
+            role = str(stem_descriptor["role"])
+            if role == "choir":
+                role = "backing_vocals"
+            if role not in {"lead_vocal", "backing_vocals", "guitar", "strings"}:
+                raise ValueError("Los buses automáticos de ambiente no están validados para ese rol")
+            effect_type = str(action.get("effect_type", ""))
+            if effect_type not in {"reverb", "delay"}:
+                raise ValueError("El ambiente debe ser reverb o delay")
+            bpm = float(project.get("tempo_bpm") or 0.0)
+            proposal = propose_ambience(
+                Path(stem_descriptor["path"]),
+                role,  # type: ignore[arg-type]
+                effect_type,  # type: ignore[arg-type]
+                bpm,
+                source_kind,  # type: ignore[arg-type]
+            )
+            payload = build_ambience_application_payload(
+                proposal, str(proposal["proposal_id"])
+            )
+            operations.append(
+                {
+                    "kind": "ambience",
+                    "stem_name": stem["name"],
+                    "track_guid": track["guid"],
+                    "proposal": proposal,
+                    "payload": payload,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": f"Crear bus de {effect_type} y envío a {payload['send_db']:+.1f} dB",
+                    "reason": str(proposal["reason"]),
+                }
+            )
+            risks.append("medium")
+        elif kind == "vocal_rider":
+            if str(stem_descriptor["role"]) != "lead_vocal":
+                raise ValueError("El vocal rider automático requiere una voz principal")
+            if source_kind != "organic_multitrack":
+                raise ValueError("El vocal rider sólo se aplica automáticamente a una voz orgánica confirmada")
+            proposal = build_vocal_rider_proposal(
+                Path(stem_descriptor["path"]), "organic_multitrack"
+            )
+            if proposal.get("status") != "audition_only" or not proposal.get("envelope_points"):
+                raise ValueError(str(proposal.get("reason", "El vocal rider no es necesario")))
+            items_reply = BridgeClient(timeout_seconds=8.0).call(
+                "get_track_items",
+                {"project_ref": project_ref, "track_guid": track["guid"]},
+            )
+            source_path = Path(stem_descriptor["path"]).resolve()
+            matches = []
+            for item in items_reply.result.get("items", []):
+                take = item.get("take") if isinstance(item, dict) else None
+                observed = take.get("source_path") if isinstance(take, dict) else None
+                if observed and Path(str(observed)).resolve() == source_path:
+                    matches.append(item)
+            if len(matches) != 1:
+                raise ValueError(
+                    "El vocal rider necesita exactamente un ítem de REAPER ligado al WAV vocal analizado"
+                )
+            operations.append(
+                {
+                    "kind": "vocal_rider",
+                    "stem_name": stem["name"],
+                    "track_guid": track["guid"],
+                    "item_guid": matches[0]["guid"],
+                    "proposal": proposal,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": (
+                        f"Automatizar {proposal['corrected_phrase_count']} de "
+                        f"{proposal['phrase_count']} frases (máximo ±{proposal['maximum_correction_db']:.1f} dB)"
+                    ),
+                    "reason": str(proposal["reason"]),
+                }
+            )
+            risks.append("medium")
+        elif kind == "section_volume":
+            role = str(stem_descriptor["role"])
+            if role == "choir":
+                role = "backing_vocals"
+            if role == "synth":
+                role = "synth"
+            regions = _load_song_regions(project_name)
+            proposal = build_section_volume_proposal(
+                regions,
+                role,  # type: ignore[arg-type]
+                source_kind,  # type: ignore[arg-type]
+            )
+            payload = build_section_volume_application_payload(
+                proposal, str(proposal["proposal_id"])
+            )
+            operations.append(
+                {
+                    "kind": "section_volume",
+                    "stem_name": stem["name"],
+                    "track_guid": track["guid"],
+                    "proposal": proposal,
+                    "payload": payload,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": (
+                        f"Escribir volumen relativo para {len(proposal['sections'])} secciones "
+                        f"(máximo ±{proposal['maximum_absolute_move_db']:.2f} dB)"
+                    ),
+                    "reason": "Movimientos pequeños ligados a la estructura temporal analizada.",
+                }
+            )
+            risks.append("medium")
+        elif kind == "producer_chain":
+            chain = track_producer_chain(
+                Path(stem_descriptor["path"]),
+                str(stem_descriptor["role"]),
+                source_kind,
+                existing_fx=existing_fx,
+                include_artistic_saturation=bool(action.get("include_artistic_saturation", False)),
+            )
+            if chain.get("review_status") != "user_approval_required":
+                raise ValueError("La cadena calculada no está lista para aplicar")
+            operations.append(
+                {
+                    "kind": "producer_chain",
+                    "stem_name": stem["name"],
+                    "track_guid": track["guid"],
+                    "chain": chain,
+                }
+            )
+            changes.append(
+                {
+                    "target": str(stem["track_name"]),
+                    "action": f"Aplicar cadena de {len(chain['steps'])} procesadores",
+                    "reason": "Cadena conservadora calculada según rol, señal y origen.",
+                }
+            )
+            risks.append("medium")
+        else:
+            raise ValueError(f"Acción de chat no soportada: {kind}")
+
+    if mix_by_guid:
+        operations.insert(
+            0,
+            {
+                "kind": "static_mix",
+                "items": [
+                    {key: value for key, value in item.items() if key != "stem_name"}
+                    for item in mix_by_guid.values()
+                ],
+                "targets": [str(item["stem_name"]) for item in mix_by_guid.values()],
+            },
+        )
+    risk = max(risks, key=_risk_rank) if risks else "low"
+    return {
+        "title": "Plan de acciones del chat",
+        "summary": f"{len(changes)} cambio(s) determinista(s) listo(s) para REAPER.",
+        "risk": risk,
+        "requires_approval": True,
+        "changes": changes,
+        "project_name": project_name,
+        "project_ref": project_ref,
+        "operations": operations,
+        "executable": True,
+    }
+
+
+def _execute_chat_action_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    client = BridgeClient(timeout_seconds=60.0)
+    project_ref = str(plan["project_ref"])
+    transactions: list[str] = []
+    try:
+        for operation in plan["operations"]:
+            kind = operation["kind"]
+            if kind == "static_mix":
+                reply = client.call(
+                    "apply_track_mix_batch",
+                    {"project_ref": project_ref, "items": operation["items"]},
+                )
+            elif kind == "filter":
+                proposal = operation["proposal"]
+                reply = apply_filter_proposal(
+                    client,
+                    project_ref=project_ref,
+                    track_guid=str(operation["track_guid"]),
+                    proposal=proposal,
+                    approved_proposal_id=str(proposal["proposal_id"]),
+                    existing_fx=operation["existing_fx"],
+                    selected_fx_guid=operation["selected_fx_guid"],
+                )
+            elif kind == "producer_chain":
+                chain = operation["chain"]
+                reply = apply_producer_chain(
+                    client,
+                    project_ref=project_ref,
+                    track_guid=str(operation["track_guid"]),
+                    chain=chain,
+                    approved_chain_id=str(chain["chain_id"]),
+                )
+            elif kind == "ambience":
+                payload = operation["payload"]
+                bus_reply = client.call(
+                    "create_effect_bus",
+                    {
+                        "project_ref": project_ref,
+                        "bus_name": payload["bus_name"],
+                        "effect_type": payload["effect_type"],
+                        "parameters": payload["parameters"],
+                    },
+                    timeout_seconds=30.0,
+                )
+                bus_transaction = str(
+                    bus_reply.result.get("transaction_request_id", bus_reply.request_id)
+                )
+                transactions.append(bus_transaction)
+                bus = bus_reply.result["bus"]
+                reply = client.call(
+                    "create_bus_send",
+                    {
+                        "project_ref": project_ref,
+                        "source_track_guid": operation["track_guid"],
+                        "destination_track_guid": bus["guid"],
+                        "volume_db": payload["send_db"],
+                        "pan": 0.0,
+                    },
+                )
+            elif kind == "vocal_rider":
+                proposal = operation["proposal"]
+                reply = client.call(
+                    "apply_vocal_rider_envelope",
+                    {
+                        "project_ref": project_ref,
+                        "track_guid": operation["track_guid"],
+                        "item_guid": operation["item_guid"],
+                        "proposal_id": proposal["proposal_id"],
+                        "source_file_path": proposal["source_file_path"],
+                        "source_sha256": proposal["source_sha256"],
+                        "source_kind": "organic_multitrack",
+                        "points": proposal["envelope_points"],
+                    },
+                )
+            elif kind == "section_volume":
+                reply = client.call(
+                    "apply_section_volume_envelope",
+                    {
+                        "project_ref": project_ref,
+                        "track_guid": operation["track_guid"],
+                        **operation["payload"],
+                    },
+                )
+            elif kind == "mastering":
+                reply = client.call(
+                    "apply_mastering_limiter",
+                    {"project_ref": project_ref, **operation["payload"]},
+                    timeout_seconds=30.0,
+                )
+            elif kind == "render":
+                output_file = str(operation["output_file"])
+                reply = client.call(
+                    "render_master_candidate",
+                    {
+                        "project_ref": project_ref,
+                        "output_file": output_file,
+                        "sample_rate_hz": operation["sample_rate_hz"],
+                    },
+                    timeout_seconds=900.0,
+                )
+                render_transaction = str(
+                    reply.result.get("transaction_request_id", reply.request_id)
+                )
+                transactions.append(render_transaction)
+                file_report = build_master_delivery_qc(Path(output_file))
+                report = build_rendered_master_candidate_report(reply.to_dict(), file_report)
+                report_path = Path(output_file).with_suffix(".report.json")
+                report_path.write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                snapshot = reply.result.get("previous_render_settings")
+                reply = client.call(
+                    "restore_render_settings",
+                    {
+                        "project_ref": project_ref,
+                        "output_file": output_file,
+                        "snapshot": snapshot,
+                    },
+                    timeout_seconds=30.0,
+                )
+            elif kind == "midi_cleanup":
+                report = run_cleanup(
+                    Path(operation["midi_path"]),
+                    Path(operation["audio_path"]),
+                    Path(operation["output_directory"]),
+                    bpm=float(operation["bpm"]),
+                    profile=str(operation["profile"]),
+                )
+                runtime.record_activity(
+                    {
+                        "kind": "midi_cleanup",
+                        "project": plan["project_name"],
+                        "target": Path(operation["midi_path"]).name,
+                        "summary": "Variantes MIDI generadas; original preservado",
+                        "reaper_modified": False,
+                        "report_path": report.get("report_path"),
+                    }
+                )
+                continue
+            elif kind == "song_structure":
+                reply = client.call(
+                    "apply_song_structure_regions",
+                    {"project_ref": project_ref, **operation["payload"]},
+                    timeout_seconds=60.0,
+                )
+            else:
+                raise ValueError(f"Operación no ejecutable: {kind}")
+            transactions.append(str(reply.result.get("transaction_request_id", reply.request_id)))
+    except Exception:
+        for transaction_id in reversed(transactions):
+            try:
+                client.call(
+                    "undo_transaction",
+                    {"project_ref": project_ref, "transaction_request_id": transaction_id},
+                    timeout_seconds=15.0,
+                )
+            except Exception:
+                pass
+        raise
+    return {
+        "status": "applied",
+        "message": "Plan aplicado y verificado en REAPER.",
+        "project_ref": project_ref,
+        "transaction_request_ids": transactions,
+        "transaction_request_id": transactions[-1] if transactions else None,
+    }
 
 
 def _source_label(source_kind: str) -> str:
@@ -683,30 +1512,122 @@ async def apply_project_chain(project_name: str, value: ApplyChainInput) -> dict
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/api/projects/{project_name}/filters/preview")
+async def preview_project_filter(project_name: str, value: FilterInput) -> dict[str, Any]:
+    try:
+        name = _validate_song_name(project_name)
+        stem = _stem_descriptor(name, value.stem_name)
+        source_kind = value.source_kind or _source_kind_for_stem(name, stem)
+        proposal = await asyncio.to_thread(
+            build_filter_proposal,
+            Path(stem["path"]),
+            str(stem["role"]),
+            source_kind,
+            value.filter_type,
+            preset_name=value.preset_name,
+        )
+        existing_fx: list[dict[str, Any]] = []
+        reaper_binding: dict[str, Any] | None = None
+        try:
+            _, state, track = await asyncio.to_thread(
+                _connected_stem, name, value.stem_name, 1.25
+            )
+            track_state = await asyncio.to_thread(
+                BridgeClient(timeout_seconds=8.0).call,
+                "get_track_state",
+                {"project_ref": state["result"]["project_ref"], "track_guid": track["guid"]},
+            )
+            existing_fx = [dict(item) for item in track_state.result.get("fx", [])]
+            reaper_binding = {
+                "project_ref": state["result"]["project_ref"],
+                "track_guid": track["guid"],
+                "track_name": track["name"],
+            }
+        except Exception:
+            reaper_binding = None
+        binding = filter_bindings(proposal, existing_fx)
+        return {
+            "proposal": proposal,
+            "binding": binding,
+            "reaper_binding": reaper_binding,
+            "can_apply": bool(reaper_binding) and bool(proposal["can_approve"]),
+        }
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{project_name}/filters/apply")
+async def apply_project_filter(project_name: str, value: ApplyFilterInput) -> dict[str, Any]:
+    try:
+        name = _validate_song_name(project_name)
+        stem, state, track = await asyncio.to_thread(_connected_stem, name, value.stem_name)
+        project_ref = str(state["result"]["project_ref"])
+        track_state = await asyncio.to_thread(
+            BridgeClient(timeout_seconds=8.0).call,
+            "get_track_state",
+            {"project_ref": project_ref, "track_guid": track["guid"]},
+        )
+        existing_fx = [dict(item) for item in track_state.result.get("fx", [])]
+        source_kind = value.source_kind or _source_kind_for_stem(name, stem)
+        proposal = await asyncio.to_thread(
+            build_filter_proposal,
+            Path(stem["path"]),
+            str(stem["role"]),
+            source_kind,
+            value.filter_type,
+            preset_name=value.preset_name,
+        )
+        reply = await asyncio.to_thread(
+            apply_filter_proposal,
+            BridgeClient(timeout_seconds=60.0),
+            project_ref=project_ref,
+            track_guid=str(track["guid"]),
+            proposal=proposal,
+            approved_proposal_id=value.approved_proposal_id,
+            existing_fx=existing_fx,
+            selected_fx_guid=value.fx_guid,
+        )
+        transaction_id = str(reply.result.get("transaction_request_id", reply.request_id))
+        runtime.record_activity(
+            {
+                "kind": "filter",
+                "project": name,
+                "target": value.stem_name,
+                "summary": f"{proposal['title']} aplicado y verificado",
+                "reaper_modified": True,
+                "project_ref": project_ref,
+                "transaction_request_id": transaction_id,
+            }
+        )
+        return {
+            "proposal": proposal,
+            "application": reply.to_dict(),
+            "transaction_request_id": transaction_id,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/projects/{project_name}/static-mix/apply")
 async def apply_static_mix(project_name: str, value: StaticMixInput) -> dict[str, Any]:
     if all(item is None for item in (value.volume_db, value.pan, value.muted, value.solo)):
         raise HTTPException(status_code=422, detail="No hay ningún ajuste para aplicar")
-    if value.solo is not None and any(item is not None for item in (value.volume_db, value.pan, value.muted)):
-        raise HTTPException(status_code=422, detail="Aplicá Solo por separado para conservar un único Undo")
     try:
         name = _validate_song_name(project_name)
         _, state, track = await asyncio.to_thread(_connected_stem, name, value.stem_name)
         project_ref = str(state["result"]["project_ref"])
         client = BridgeClient(timeout_seconds=15.0)
+        action = "apply_track_mix_batch"
+        item = {"track_guid": track["guid"]}
+        if value.volume_db is not None:
+            item["volume_db"] = value.volume_db
+        if value.pan is not None:
+            item["pan"] = value.pan
+        if value.muted is not None:
+            item["muted"] = value.muted
         if value.solo is not None:
-            action = "set_track_solo"
-            params = {"project_ref": project_ref, "track_guid": track["guid"], "soloed": value.solo}
-        else:
-            action = "apply_track_mix_batch"
-            item = {"track_guid": track["guid"]}
-            if value.volume_db is not None:
-                item["volume_db"] = value.volume_db
-            if value.pan is not None:
-                item["pan"] = value.pan
-            if value.muted is not None:
-                item["muted"] = value.muted
-            params = {"project_ref": project_ref, "items": [item]}
+            item["soloed"] = value.solo
+        params = {"project_ref": project_ref, "items": [item]}
         reply = await asyncio.to_thread(client.call, action, params)
         transaction_id = str(reply.result.get("transaction_request_id", reply.request_id))
         runtime.record_activity(
@@ -745,6 +1666,38 @@ async def undo_reaper(value: UndoInput) -> dict[str, Any]:
         return reply.to_dict()
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/reaper/undo-plan")
+async def undo_reaper_plan(value: UndoPlanInput) -> dict[str, Any]:
+    undone: list[str] = []
+    try:
+        client = BridgeClient(timeout_seconds=15.0)
+        for transaction_id in reversed(value.transaction_request_ids):
+            await asyncio.to_thread(
+                client.call,
+                "undo_transaction",
+                {
+                    "project_ref": value.project_ref,
+                    "transaction_request_id": transaction_id,
+                },
+            )
+            undone.append(transaction_id)
+        runtime.record_activity(
+            {
+                "kind": "undo_plan",
+                "project": "",
+                "target": "REAPER",
+                "summary": f"Plan de {len(undone)} transacciones deshecho",
+                "reaper_modified": True,
+            }
+        )
+        return {"status": "undone", "transaction_request_ids": undone}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Se deshicieron {len(undone)} transacciones antes del error: {exc}",
+        ) from exc
 
 
 def _copy_upload(upload: UploadFile, destination: Path, suffixes: set[str]) -> None:
@@ -823,9 +1776,12 @@ async def chat(value: ChatInput) -> dict[str, Any]:
     try:
         project_name = _validate_song_name(value.project_name)
         deep_context = request_needs_deep_context(value.message)
+        direct_action = request_is_direct_action(value.message)
         conversation = runtime.conversation(value.conversation_id, project_name)
         context_level = (
-            "deep"
+            "action"
+            if direct_action
+            else "deep"
             if deep_context
             or (conversation is not None and conversation.get("context_level") == "deep")
             else "compact"
@@ -836,7 +1792,9 @@ async def chat(value: ChatInput) -> dict[str, Any]:
         )
         if conversation is None:
             context = build_project_context(project_name)
-            if not deep_context:
+            if direct_action:
+                context = action_project_context(context)
+            elif not deep_context:
                 context = compact_project_context(context)
             context_revision = _context_revision(context)
             messages = build_agent_messages(
@@ -844,6 +1802,22 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 value.message,
                 [item.model_dump() for item in value.history],
             )
+        elif direct_action:
+            context = action_project_context(build_project_context(project_name))
+            current_revision = _context_revision(context)
+            if (
+                conversation.get("context_level") != "action"
+                or conversation.get("context_revision") != current_revision
+            ):
+                context_revision = current_revision
+                messages = [
+                    {
+                        "role": "user",
+                        "content": build_context_update_message(context, value.message),
+                    }
+                ]
+            else:
+                messages = [{"role": "user", "content": value.message}]
         elif deep_context:
             context = build_project_context(project_name)
             current_revision = _context_revision(context)
@@ -862,11 +1836,15 @@ async def chat(value: ChatInput) -> dict[str, Any]:
                 messages = [{"role": "user", "content": value.message}]
         else:
             messages = [{"role": "user", "content": value.message}]
-        use_reasoning = deep_context and request_needs_reasoning(value.message)
+        use_reasoning = (
+            deep_context
+            and not direct_action
+            and request_needs_reasoning(value.message)
+        )
         result = await asyncio.to_thread(
             LMStudioClient(runtime.brain()).chat_result,
             messages,
-            max_tokens=900 if use_reasoning else 450 if deep_context else 220,
+            max_tokens=1200 if direct_action else 900 if use_reasoning else 450 if deep_context else 220,
             reasoning="on" if use_reasoning else "off",
             previous_response_id=None
             if conversation is None
@@ -898,19 +1876,156 @@ async def chat(value: ChatInput) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LMStudioError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    proposal = response.get("proposal")
-    if isinstance(proposal, dict):
-        proposal_id = runtime.add_proposal(proposal)
-        response["proposal"] = {**proposal, "proposal_id": proposal_id, "status": "pending"}
+    actions = response.get("actions")
+    if isinstance(actions, list) and actions:
+        analysis_actions = [item for item in actions if item.get("kind") == "analyze_project"]
+        mutating_actions = [item for item in actions if item.get("kind") != "analyze_project"]
+        if analysis_actions and mutating_actions:
+            response["message"] = (
+                f"{response['message']}\n\nPrimero ejecutaré el análisis; pedí los cambios en el siguiente mensaje "
+                "para que se calculen con evidencia actualizada."
+            )
+            actions = analysis_actions
+            mutating_actions = []
+        if analysis_actions and not mutating_actions:
+            try:
+                metadata = _project_metadata(project_name)
+                bpm = metadata.get("tempo_bpm")
+                if not isinstance(bpm, (int, float)):
+                    raise ValueError("El proyecto necesita un BPM antes de analizarlo")
+                artifact = await asyncio.to_thread(
+                    analyze_project_media,
+                    project_name,
+                    float(bpm),
+                    str(metadata.get("source_kind", "unknown")),
+                    source_overrides_from_metadata(metadata),
+                )
+                summary = artifact["diagnosis"]["summary"]
+                finding_count = sum(
+                    int(value)
+                    for value in summary.get("finding_counts_by_severity", {}).values()
+                )
+                response["message"] = (
+                    f"{response['message']}\n\nAnálisis técnico completado: "
+                    f"{summary.get('stem_count', 0)} stems medidos y "
+                    f"{finding_count} hallazgos."
+                )
+                response["proposal"] = None
+                runtime.record_activity(
+                    {
+                        "kind": "analysis",
+                        "project": project_name,
+                        "target": "Stems",
+                        "summary": "Análisis técnico solicitado desde el chat",
+                        "reaper_modified": False,
+                    }
+                )
+                return response
+            except Exception as exc:
+                response["message"] = f"{response['message']}\n\nNo pude completar el análisis: {exc}"
+                response["proposal"] = None
+                return response
+        try:
+            plan = await asyncio.to_thread(_build_chat_action_plan, project_name, actions)
+        except Exception as exc:
+            response["message"] = (
+                f"{response['message']}\n\nNo pude preparar una orden segura: {exc}"
+            )
+            response["proposal"] = None
+            response["action_error"] = str(exc)
+            return response
+        proposal_id = runtime.add_proposal(plan, executable=True)
+        stored = {**plan, "proposal_id": proposal_id, "status": "pending"}
+        approval_mode = runtime.approval_mode()
+        should_apply = approval_mode == "all" or (
+            approval_mode == "low_risk" and plan["risk"] == "low"
+        )
+        if should_apply:
+            try:
+                application = await asyncio.to_thread(_execute_chat_action_plan, plan)
+                stored = runtime.mark_proposal(
+                    proposal_id,
+                    status="applied",
+                    application=application,
+                )
+                runtime.record_activity(
+                    {
+                        "kind": "chat_action_plan",
+                        "project": project_name,
+                        "target": "REAPER",
+                        "summary": application["message"],
+                        "reaper_modified": True,
+                        "project_ref": application["project_ref"],
+                        "transaction_request_id": application.get("transaction_request_id"),
+                        "transaction_request_ids": application.get("transaction_request_ids", []),
+                    }
+                )
+                response["message"] = f"{response['message']}\n\n{application['message']}"
+            except Exception as exc:
+                stored = runtime.mark_proposal(
+                    proposal_id,
+                    status="failed",
+                    application_error=str(exc),
+                )
+                response["message"] = (
+                    f"{response['message']}\n\nEl plan automático no se aplicó: {exc}"
+                )
+        response["proposal"] = stored
+    else:
+        proposal = response.get("proposal")
+        if isinstance(proposal, dict):
+            proposal_id = runtime.add_proposal(proposal)
+            response["proposal"] = {
+                **proposal,
+                "proposal_id": proposal_id,
+                "status": "pending",
+                "executable": False,
+            }
     return response
 
 
 @app.post("/api/proposals/{proposal_id}/decision")
-def decide_proposal(proposal_id: str, value: ProposalDecision) -> dict[str, Any]:
+async def decide_proposal(proposal_id: str, value: ProposalDecision) -> dict[str, Any]:
     try:
-        return runtime.decide(proposal_id, value.decision)
+        proposal = runtime.proposal(proposal_id)
+        if value.decision == "preview":
+            return proposal
+        if value.decision == "reject":
+            return runtime.reject(proposal_id)
+        if not proposal.get("executable") or not isinstance(proposal.get("operations"), list):
+            return {
+                **proposal,
+                "status": "awaiting_deterministic_mapping",
+                "message": (
+                    "La propuesta es una recomendación, no una orden tipada. "
+                    "PampaPilot no modificó REAPER."
+                ),
+            }
+        if proposal.get("status") == "applied":
+            return proposal
+        application = await asyncio.to_thread(_execute_chat_action_plan, proposal)
+        updated = runtime.mark_proposal(
+            proposal_id,
+            status="applied",
+            application=application,
+        )
+        runtime.record_activity(
+            {
+                "kind": "chat_action_plan",
+                "project": proposal.get("project_name", ""),
+                "target": "REAPER",
+                "summary": application["message"],
+                "reaper_modified": True,
+                "project_ref": application["project_ref"],
+                "transaction_request_id": application.get("transaction_request_id"),
+                "transaction_request_ids": application.get("transaction_request_ids", []),
+            }
+        )
+        return updated
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Propuesta inexistente") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def main() -> None:

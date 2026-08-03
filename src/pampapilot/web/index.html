@@ -92,9 +92,11 @@
       <label>Modelo<input id="brain-model" name="model" type="text" placeholder="google/gemma-4-31b"></label>
       <label>Seguridad<select id="brain-auth" name="authentication_required"><option value="true">Token requerido (recomendado)</option><option value="false">Servidor sin autenticación</option></select></label>
       <label>Tiempo máximo de respuesta<select id="brain-timeout" name="timeout_seconds"><option value="60">60 segundos</option><option value="120">120 segundos</option><option value="180" selected>180 segundos (recomendado)</option><option value="300">300 segundos</option></select></label>
+      <label>Aprobación de acciones del chat<select id="approval-mode" name="approval_mode"><option value="manual">Manual (recomendado para producción)</option><option value="low_risk">Automática sólo para riesgo bajo</option><option value="all">Automática para todo (modo de prueba)</option></select></label>
       <label>Token de LM Studio<input id="brain-token" name="token" type="password" autocomplete="new-password" placeholder="Ingresá el token para configurarlo"></label>
       <label class="checkbox-field"><input id="remember-token" type="checkbox"><span>Recordar token cifrado para próximos inicios</span></label>
       <p class="form-hint">Si lo recordás, Windows lo cifra para este usuario mediante DPAPI. PampaPilot nunca devuelve el token al navegador.</p>
+      <p class="form-hint">La aprobación automática no saltea validación, lectura posterior, historial ni Undo. “Todo” puede alterar varias pistas sin pedir un clic y se recomienda sólo para pruebas.</p>
       <div class="modal-actions"><button type="button" class="secondary-button close-dialog">Cancelar</button><button class="primary-button" type="submit">Guardar y probar</button></div>
       <p class="form-result" id="settings-result"></p>
     </form>
@@ -147,7 +149,18 @@
         <div class="inline-controls"><button class="primary-button" id="apply-static-mix">Revisar y aplicar</button><button class="secondary-button" id="toggle-solo">Activar Solo</button></div>
       </div>
       <div class="tool-section">
-        <h3>3. Cadena recomendada</h3>
+        <h3>3. Filtros individuales</h3>
+        <p>Probá un procesador por vez. PampaPilot calcula un punto de partida, detecta instancias existentes y nunca duplica un FX ambiguo.</p>
+        <div class="form-grid compact-grid">
+          <label>Filtro<select id="individual-filter"><option value="compressor">Compresión · ReaComp</option><option value="eq">Ecualización · ReaEQ</option><option value="gate">Puerta · ReaGate</option><option value="deesser">De-esser · ReaXcomp</option><option value="dynamic_resonance">Resonancia dinámica · ReaXcomp</option><option value="saturation">Saturación suave</option><option value="tuning">Afinación · ReaTune</option></select></label>
+          <label>Preset ReaTune<input id="reatune-preset" type="text" value="pampapilota#" maxlength="128"></label>
+          <label id="filter-binding-field" class="hidden">FX existente<select id="filter-binding"></select></label>
+        </div>
+        <div class="inline-controls"><button class="secondary-button" id="preview-filter">Calcular parámetros</button><button class="primary-button" id="apply-filter" disabled>Aplicar filtro aprobado</button></div>
+        <div id="filter-preview" class="chain-preview"><p class="analysis-safety">Elegí un filtro para analizar esta pista.</p></div>
+      </div>
+      <div class="tool-section">
+        <h3>4. Cadena recomendada</h3>
         <p>Analiza el WAV y propone sólo los filtros justificados por rol y procedencia. Para Suno usa una política más conservadora.</p>
         <label class="checkbox-field"><input id="include-saturation" type="checkbox"><span>Incluir saturación artística suave</span></label>
         <div class="inline-controls"><button class="secondary-button" id="preview-chain">Generar propuesta</button><button class="primary-button" id="apply-chain" disabled>Aplicar cadena aprobada</button></div>

@@ -9,16 +9,19 @@ flujo habitual. Permite:
 - crear una canción cargando stems, MIDI, referencia y letra;
 - configurar LM Studio sin escribir el token en archivos;
 - conversar con el Productor IA usando contexto estructurado del proyecto;
-- recibir propuestas que siempre requieren aprobación;
+- recibir planes tipados con aprobación manual o automática configurable;
 - declarar por stem si proviene de Suno o de una grabación orgánica;
 - abrir controles tipados de volumen, paneo, mute y solo para una pista real;
-- previsualizar y aplicar una cadena de FX nativos recomendada por el motor;
-- deshacer la última transacción propia y consultar la actividad de la sesión.
+- previsualizar y aplicar filtros individuales o una cadena de FX nativos;
+- ejecutar desde chat mezcla estática, filtros, buses de ambiente, vocal rider,
+  volumen por secciones, estructura, MIDI, mastering, análisis y render;
+- deshacer todas las transacciones de un plan y consultar la actividad.
 
-Las propuestas libres del LLM siguen siendo deliberadamente **no ejecutables**:
-no se confía en texto generado para modificar un DAW. Las acciones disponibles
-desde el panel de cada stem usan, en cambio, contratos deterministas del motor,
-GUID de pista, aprobación explícita, lectura posterior de REAPER y Undo.
+Las propuestas libres del LLM siguen siendo deliberadamente **no ejecutables**.
+Cuando el modelo devuelve una intención permitida, PampaPilot la vuelve a resolver
+contra nombres, roles, GUID, estado actual y evidencia del motor. El texto del LLM
+nunca se envía a REAPER. La interfaz manual y el chat comparten el mismo gateway
+determinista, lectura posterior y Undo.
 
 ## Arranque
 
@@ -46,15 +49,24 @@ En **Configuración** se definen:
 - identificador del modelo, por ejemplo `google/gemma-4-31b`;
 - seguridad con token (predeterminada) o servidor sin autenticación;
 - tiempo máximo de generación, 180 segundos de forma predeterminada;
+- aprobación manual, automática para riesgo bajo o automática total;
 - token, que se conserva sólo en memoria hasta cerrar PampaPilot.
 
 Opcionalmente, **Recordar token** guarda un blob cifrado por Windows DPAPI bajo
 `.runtime/secrets/`. Sólo el mismo usuario de Windows puede descifrarlo. El token
 en claro nunca forma parte de respuestas HTTP, logs ni archivos versionados.
+La URL, modelo, autenticación, timeout y política de aprobación se guardan sin
+secretos en `.runtime/web-settings.json` para sobrevivir a un reinicio.
+
+La aprobación automática no desactiva validación ni verificación. El modo de
+riesgo bajo permite ajustes reversibles como volumen, paneo y filtros conservadores.
+El modo total también puede ejecutar automatizaciones, regiones y render, por lo
+que está pensado para pruebas. La política predeterminada sigue siendo manual.
 
 El adaptador usa la API nativa `/api/v1/models` y `/api/v1/chat`. En conversación
-simple desactiva el razonamiento; en análisis musical lo habilita. El LLM recibe un system
-prompt versionado, contexto sin rutas locales, letra, secciones e inventario de
+simple desactiva el razonamiento; en análisis musical lo habilita. Las órdenes
+directas reciben un catálogo pequeño de nombres y roles para evitar latencia y
+JSON incompleto. El LLM recibe un system prompt versionado, contexto sin rutas locales, letra, secciones e inventario de
 medios. Los WAV permanecen en el motor y no se envían al modelo conversacional.
 El primer turno almacena una sesión local en LM Studio; los turnos siguientes
 envían sólo el mensaje nuevo y `previous_response_id`. Si cambia el nivel de
@@ -88,10 +100,29 @@ actualización explícita de contexto, independientemente del LLM configurado.
 3. Confirmar que el encabezado diga **Vinculada con REAPER**.
 4. Definir el origen del stem. Al cambiarlo, ejecutar otra vez **Analizar proyecto**.
 5. Para un ajuste fino, revisar volumen/paneo/mute y pulsar **Revisar y aplicar**.
-6. Para filtros, pulsar **Generar propuesta**. La propuesta enumera cada FX y explica
-   por qué lo sugiere. **Aplicar cadena aprobada** sólo se habilita si la pista y sus
-   FX existentes pudieron verificarse.
-7. Usar **Deshacer última acción** inmediatamente si el resultado no corresponde.
+6. En **Filtros individuales**, elegir EQ, compresor, gate, de-esser, resonancia,
+   saturación o ReaTune y calcular sus parámetros antes de aplicar.
+7. En **Cadena recomendada**, previsualizar la secuencia completa. Aplicar sólo se
+   habilita si la pista y los FX existentes pudieron verificarse.
+8. Usar **Deshacer última acción**; para un plan de chat revierte sus transacciones
+   en orden inverso.
+
+## Acciones disponibles por chat
+
+- mezcla estática relativa o absoluta: volumen, paneo, mute y solo;
+- EQ, compresión, gate, de-esser, resonancia dinámica, saturación y ReaTune;
+- cadena de productor completa por pista;
+- buses de reverb o delay y su envío;
+- vocal rider para voz orgánica y volumen sutil por secciones;
+- aplicación de regiones estructurales ya analizadas;
+- limpieza/reconstrucción MIDI conservando originales;
+- propuesta de mastering basada en el último QC;
+- análisis técnico del proyecto y render candidato nuevo.
+
+Una frase puede producir varias acciones. Los ajustes estáticos se agrupan en una
+única transacción. Las acciones de un plan complejo se ejecutan secuencialmente y,
+si una falla, PampaPilot intenta deshacer las anteriores antes de informar el error.
+El render siempre se mantiene como acción terminal separada.
 
 La cadena automática trata los stems de Suno de forma conservadora. Una toma orgánica
 de voz o guitarra puede recibir puntos de partida para gate, EQ, compresión, de-esser o
@@ -103,7 +134,8 @@ control dinámico cuando las mediciones lo justifican. Toda la cadena se aplica 
 La vista **Herramientas** diferencia:
 
 - **Disponible offline**: ya puede usarse sin REAPER;
-- **Disponible en esta pantalla**: tiene un flujo web completo;
+- **Pantalla + chat**: tiene un flujo manual y conversacional completo;
+- **Disponible por chat**: usa el gateway tipado desde el Productor IA;
 - **Motor listo**: la lógica y el Bridge existen, pero todavía se usará desde el agente
   o desde una futura pantalla guiada.
 

@@ -32,8 +32,9 @@ class WebActionsTests(unittest.TestCase):
         items = [item for group in capability_catalog() for item in group["items"]]
         statuses = {item["id"]: item["status"] for item in items}
         self.assertEqual(statuses["static_mix"], "web_ready")
-        self.assertEqual(statuses["compression"], "engine_ready")
-        self.assertEqual(statuses["midi_cleanup"], "ready")
+        self.assertEqual(statuses["compression"], "web_ready")
+        self.assertEqual(statuses["ambience"], "chat_ready")
+        self.assertEqual(statuses["midi_cleanup"], "chat_ready")
 
 
 if __name__ == "__main__":

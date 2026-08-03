@@ -78,6 +78,49 @@ class WebServerTests(unittest.TestCase):
         self.assertFalse(decision["executable"])
         self.assertEqual(decision["status"], "awaiting_deterministic_mapping")
 
+    @patch("pampapilot.web_server.runtime.approval_mode", return_value="manual")
+    @patch("pampapilot.web_server._build_chat_action_plan")
+    @patch("pampapilot.web_server.LMStudioClient.chat_result")
+    @patch("pampapilot.web_server.build_project_context")
+    def test_chat_typed_actions_create_executable_plan(
+        self, context, chat, build_plan, _approval_mode
+    ):
+        from pampapilot.lmstudio_client import LMStudioChatResult
+
+        context.return_value = {"song": {"title": "Test"}, "stems": []}
+        chat.return_value = LMStudioChatResult(
+            '{"message":"Preparé el cambio","proposal":null,"actions":['
+            '{"kind":"static_mix","target":"Percussion","volume_delta_db":-2}]}',
+            "typed-action",
+            {},
+        )
+        build_plan.return_value = {
+            "title": "Plan",
+            "summary": "Un cambio",
+            "risk": "low",
+            "requires_approval": True,
+            "changes": [{"target": "Percussion", "action": "-2 dB", "reason": "pedido"}],
+            "project_name": "Test",
+            "project_ref": "project.rpp",
+            "operations": [{"kind": "static_mix", "items": []}],
+            "executable": True,
+        }
+
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "project_name": "Test",
+                "message": "bajá 2 dB la percusión",
+                "history": [],
+                "conversation_id": "typed-plan-test",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        proposal = response.json()["proposal"]
+        self.assertTrue(proposal["executable"])
+        self.assertEqual(proposal["status"], "pending")
+
     @patch("pampapilot.web_server.LMStudioClient.chat_result")
     @patch("pampapilot.web_server.build_project_context")
     def test_same_project_conversation_reuses_response_id(self, context, chat):

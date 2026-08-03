@@ -217,6 +217,12 @@ ACTION_SPECS: dict[str, ActionSpec] = {
             "Aplica por nombre un preset explícito a una instancia ReaTune y verifica la lectura posterior.",
         ),
         ActionSpec(
+            "apply_reatune_preset",
+            True,
+            VerificationLevel.STATE,
+            "Crea o reutiliza ReaTune y carga un preset exacto en una única transacción.",
+        ),
+        ActionSpec(
             "create_effect_bus",
             True,
             VerificationLevel.STATE,

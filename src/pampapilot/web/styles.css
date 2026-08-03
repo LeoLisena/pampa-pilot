@@ -117,7 +117,7 @@ h2 { margin: 0; font-size: 16px; }
 .capability-list section > div { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .capability-list section span { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px; background: #12212c; border-radius: 6px; }
 .capability-list small { border-radius: 10px; padding: 3px 6px; white-space: nowrap; }
-.capability-ready, .capability-web_ready { color: #9cddb0; background: #173b25; }
+.capability-ready, .capability-web_ready, .capability-chat_ready { color: #9cddb0; background: #173b25; }
 .capability-engine_ready { color: #b6cbe0; background: #223343; }
 .activity-list { display: grid; gap: 8px; max-height: 60vh; overflow: auto; }
 .activity-list article { display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 8px; background: #0d1821; padding: 12px; }

@@ -1,4 +1,4 @@
-const state = { project: null, history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, undo: null };
+const state = { project: null, history: [], proposal: null, conversationId: null, selectedStem: null, chain: null, filterProposal: null, filterBinding: null, undo: null };
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -152,14 +152,16 @@ function renderProposal(proposal) {
   const container = $('#proposal-card');
   if (!proposal) { container.innerHTML = ''; return; }
   const changes = proposal.changes?.length || 0;
+  const applied = proposal.status === 'applied';
+  const executable = proposal.executable === true;
   container.innerHTML = `
     <section class="proposal-card">
-      <h3>◉ ${escapeHtml(proposal.title || 'Propuesta pendiente')}</h3>
-      <p>${changes} ajuste${changes === 1 ? '' : 's'} sugerido${changes === 1 ? '' : 's'} · requiere aprobación</p>
+      <h3>${applied ? '✓' : '◉'} ${escapeHtml(proposal.title || 'Propuesta pendiente')}</h3>
+      <p>${changes} ajuste${changes === 1 ? '' : 's'} ${applied ? 'aplicado y verificado' : executable ? 'listo para aplicar' : 'sugerido · requiere mapeo determinista'}</p>
       <div class="proposal-actions">
         <button data-decision="preview">◉ Previsualizar</button>
-        <button class="apply" data-decision="apply">✓ Aplicar</button>
-        <button class="reject" data-decision="reject">× Rechazar</button>
+        ${!applied && executable ? '<button class="apply" data-decision="apply">✓ Aplicar</button>' : ''}
+        ${!applied ? '<button class="reject" data-decision="reject">× Rechazar</button>' : ''}
       </div>
     </section>`;
   container.querySelectorAll('[data-decision]').forEach(button => button.addEventListener('click', () => decideProposal(button.dataset.decision)));
@@ -175,8 +177,18 @@ async function decideProposal(decision) {
       const detail = (result.changes || []).map(change => `${change.target}: ${change.action}`).join('\n');
       addMessage('assistant', `${result.summary || result.title}\n\n${detail}`);
     } else if (decision === 'apply') {
-      addMessage('assistant', result.message || 'La acción no fue aplicada.');
-      toast('REAPER no fue modificado: falta el mapeo determinista.');
+      const application = result.application || {};
+      addMessage('assistant', application.message || result.message || 'La acción no fue aplicada.');
+      if (result.status === 'applied') {
+        if (application.transaction_request_id) {
+          rememberUndo(application);
+        }
+        renderProposal(result);
+        await refreshStatus();
+        toast('Plan aplicado y verificado en REAPER.');
+      } else {
+        toast('REAPER no fue modificado: falta el mapeo determinista.');
+      }
     } else {
       renderProposal(null);
       toast('Propuesta rechazada.');
@@ -205,6 +217,11 @@ $('#chat-form').addEventListener('submit', async event => {
     addMessage('assistant', result.message);
     state.history.push({role: 'user', content: message}, {role: 'assistant', content: result.message});
     renderProposal(result.proposal);
+    if (result.proposal?.status === 'applied') {
+      const application = result.proposal.application || {};
+      if (application.transaction_request_id) rememberUndo(application);
+      toast('Acciones del chat aplicadas automáticamente y verificadas.');
+    }
   } catch (error) {
     pending.remove();
     window.clearTimeout(slowNotice);
@@ -325,6 +342,8 @@ function reasonLabel(value) {
 async function openStemTools(stem) {
   state.selectedStem = stem;
   state.chain = null;
+  state.filterProposal = null;
+  state.filterBinding = null;
   $('#stem-tools-title').textContent = stem.name;
   $('#stem-source-kind').value = ['suno_stems', 'organic_multitrack', 'unknown'].includes(stem.source_kind) ? stem.source_kind : 'unknown';
   $('#stem-volume').value = '';
@@ -332,6 +351,9 @@ async function openStemTools(stem) {
   $('#stem-muted').value = '';
   $('#include-saturation').checked = false;
   $('#chain-preview').innerHTML = '<p class="analysis-safety">Todavía no se generó una propuesta.</p>';
+  $('#filter-preview').innerHTML = '<p class="analysis-safety">Elegí un filtro para analizar esta pista.</p>';
+  $('#filter-binding-field').classList.add('hidden');
+  $('#apply-filter').disabled = true;
   $('#apply-chain').disabled = true;
   $('#stem-tools-result').textContent = '';
   $('#stem-reaper-binding').textContent = 'Consultando el proyecto abierto en REAPER…';
@@ -357,6 +379,68 @@ async function openStemTools(stem) {
     $('#stem-reaper-binding').textContent = 'REAPER/Bridge no está disponible. Podés clasificar y generar propuestas offline; Aplicar queda bloqueado.';
   }
 }
+
+function parameterLabel(key) {
+  return ({threshold_db: 'Umbral', ratio: 'Ratio', attack_ms: 'Ataque', release_ms: 'Release', knee_db: 'Knee', rms_ms: 'RMS', highpass_hz: 'Detector HPF', lowpass_hz: 'Detector LPF', frequency_hz: 'Frecuencia', gain_db: 'Ganancia', bandwidth_octaves: 'Ancho', filter_type: 'Tipo', drive_percent: 'Drive', muffle_percent: 'Muffle', output_gain_db: 'Salida', lower_crossover_hz: 'Crossover inferior', upper_crossover_hz: 'Crossover superior', band3_top_frequency_hz: 'Límite superior', preset_name: 'Preset'})[key] || key.replaceAll('_', ' ');
+}
+
+function parameterValue(key, value) {
+  if (typeof value !== 'number') return String(value);
+  const unit = key.endsWith('_db') ? ' dB' : key.endsWith('_ms') ? ' ms' : key.endsWith('_hz') ? ' Hz' : key.endsWith('_percent') ? ' %' : '';
+  return `${Number(value.toFixed(2))}${unit}`;
+}
+
+$('#preview-filter').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem) return;
+  const output = $('#filter-preview');
+  output.innerHTML = '<p>Analizando y calculando parámetros…</p>';
+  $('#apply-filter').disabled = true;
+  $('#filter-binding-field').classList.add('hidden');
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/filters/preview`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({stem_name: state.selectedStem.name, source_kind: $('#stem-source-kind').value, filter_type: $('#individual-filter').value, preset_name: $('#reatune-preset').value})});
+    state.filterProposal = reply.proposal;
+    state.filterBinding = reply.binding;
+    const parameters = Object.entries(reply.proposal.parameters || {});
+    const parameterMarkup = parameters.length ? `<div class="parameter-grid">${parameters.map(([key, value]) => `<span><small>${escapeHtml(parameterLabel(key))}</small><strong>${escapeHtml(parameterValue(key, value))}</strong></span>`).join('')}</div>` : '<p>No se generaron parámetros aplicables.</p>';
+    const decisionCopy = ({not_recommended: 'No recomendado para esta fuente.', insufficient_evidence: 'No hay evidencia suficiente.', classify_source_first: 'Primero clasificá el origen.', audition_only: 'Listo para comparar mediante escucha.'})[reply.proposal.decision] || reply.proposal.decision;
+    output.innerHTML = `<h4>${escapeHtml(reply.proposal.title)}</h4><p>${escapeHtml(reasonLabel(reply.proposal.reason))}</p>${parameterMarkup}<p><strong>${escapeHtml(decisionCopy)}</strong></p>`;
+    if (reply.binding.status === 'selection_required') {
+      const select = $('#filter-binding');
+      select.innerHTML = reply.binding.choices.map(item => `<option value="${escapeHtml(item.guid)}">${escapeHtml(item.name)}${item.preset_name ? ` · ${escapeHtml(item.preset_name)}` : ''}</option>`).join('');
+      $('#filter-binding-field').classList.remove('hidden');
+      output.insertAdjacentHTML('beforeend', `<p>${escapeHtml(reply.binding.reason)}</p>`);
+    } else if (reply.binding.status === 'reuse_existing') {
+      output.insertAdjacentHTML('beforeend', '<p>Se reutilizará la instancia existente; no se duplicará el FX.</p>');
+    } else {
+      output.insertAdjacentHTML('beforeend', '<p>Se creará una instancia nueva del FX nativo.</p>');
+    }
+    $('#apply-filter').disabled = !reply.can_apply;
+    $('#stem-tools-result').textContent = reply.can_apply ? 'Filtro listo para tu aprobación.' : 'La propuesta queda sólo como referencia; no se puede aplicar ahora.';
+  } catch (error) {
+    output.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+    $('#stem-tools-result').textContent = 'Este filtro no está disponible para la combinación actual.';
+  }
+});
+
+$('#individual-filter').addEventListener('change', () => {
+  state.filterProposal = null;
+  $('#apply-filter').disabled = true;
+  $('#filter-preview').innerHTML = '<p class="analysis-safety">Calculá nuevamente los parámetros para este filtro.</p>';
+  $('#filter-binding-field').classList.add('hidden');
+});
+
+$('#apply-filter').addEventListener('click', async () => {
+  if (!state.project || !state.selectedStem || !state.filterProposal) return;
+  if (!window.confirm(`Aplicar ${state.filterProposal.title} a ${state.selectedStem.name}?`)) return;
+  const selectedGuid = state.filterBinding?.status === 'selection_required' ? $('#filter-binding').value : null;
+  $('#stem-tools-result').textContent = 'Aplicando el filtro y verificando sus parámetros…';
+  try {
+    const reply = await api(`/api/projects/${encodeURIComponent(state.project.name)}/filters/apply`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({stem_name: state.selectedStem.name, source_kind: $('#stem-source-kind').value, filter_type: state.filterProposal.filter_type, preset_name: $('#reatune-preset').value, approved_proposal_id: state.filterProposal.proposal_id, fx_guid: selectedGuid || null})});
+    rememberUndo(reply);
+    $('#apply-filter').disabled = true;
+    $('#stem-tools-result').textContent = `${reply.proposal.title} aplicado y verificado. Podés deshacerlo.`;
+  } catch (error) { $('#stem-tools-result').textContent = error.message; }
+});
 
 $('#save-stem-source').addEventListener('click', async () => {
   if (!state.project || !state.selectedStem) return;
@@ -435,15 +519,16 @@ $('#apply-chain').addEventListener('click', async () => {
 });
 
 function rememberUndo(reply) {
-  const projectRef = reply.application?.result?.project_ref || state.selectedStem?.projectRef;
-  state.undo = {project_ref: projectRef, transaction_request_id: reply.transaction_request_id};
-  $('#undo-last').disabled = !(state.undo.project_ref && state.undo.transaction_request_id);
+  const projectRef = reply.project_ref || reply.application?.result?.project_ref || state.selectedStem?.projectRef;
+  const transactionIds = reply.transaction_request_ids || (reply.transaction_request_id ? [reply.transaction_request_id] : []);
+  state.undo = {project_ref: projectRef, transaction_request_ids: transactionIds};
+  $('#undo-last').disabled = !(state.undo.project_ref && state.undo.transaction_request_ids.length);
 }
 
 $('#undo-last').addEventListener('click', async () => {
   if (!state.undo) return;
   try {
-    await api('/api/reaper/undo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(state.undo)});
+    await api('/api/reaper/undo-plan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(state.undo)});
     state.undo = null;
     $('#undo-last').disabled = true;
     $('#stem-tools-result').textContent = 'La última acción de PampaPilot fue deshecha.';
@@ -454,7 +539,7 @@ const capabilitiesDialog = $('#capabilities-dialog');
 async function openCapabilities() {
   capabilitiesDialog.showModal();
   const result = await api('/api/capabilities');
-  const labels = {ready: 'Disponible offline', web_ready: 'Disponible en esta pantalla', engine_ready: 'Motor listo'};
+  const labels = {ready: 'Disponible offline', web_ready: 'Pantalla + chat', chat_ready: 'Disponible por chat', engine_ready: 'Motor listo'};
   $('#capability-list').innerHTML = result.groups.map(group => `<section><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml(group.description)}</p><div>${group.items.map(item => `<span><strong>${escapeHtml(item.title)}</strong><small class="capability-${item.status}">${escapeHtml(labels[item.status] || item.status)}</small></span>`).join('')}</div></section>`).join('');
 }
 
@@ -486,7 +571,7 @@ $('#settings-form').addEventListener('submit', async event => {
   try {
     const result = await api('/api/settings/brain', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true', timeout_seconds: Number($('#brain-timeout').value), remember_token: $('#remember-token').checked})
+      body: JSON.stringify({base_url: $('#brain-url').value, model: $('#brain-model').value, token: token || null, authentication_required: $('#brain-auth').value === 'true', timeout_seconds: Number($('#brain-timeout').value), remember_token: $('#remember-token').checked, approval_mode: $('#approval-mode').value})
     });
     $('#brain-token').value = '';
     resultElement.textContent = result.status.connected ? 'Conexión correcta.' : `Configuración guardada: ${result.status.error}`;
@@ -533,6 +618,7 @@ async function loadSettings() {
     $('#brain-auth').value = settings.authentication_required ? 'true' : 'false';
     $('#brain-timeout').value = String(settings.timeout_seconds || 180);
     $('#remember-token').checked = Boolean(settings.token_persisted);
+    $('#approval-mode').value = settings.approval_mode || 'manual';
   } catch { /* defaults remain visible */ }
 }
 

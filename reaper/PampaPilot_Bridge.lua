@@ -1,7 +1,7 @@
 -- PampaPilot: puente local y verificable para REAPER.
 -- El script sólo ejecuta las acciones registradas en ACTIONS.
 
-local BRIDGE_VERSION = "0.27.0"
+local BRIDGE_VERSION = "0.28.0"
 local PROTOCOL_VERSION = "0.1"
 local MAX_MESSAGE_BYTES = 1000000
 local POLL_INTERVAL_SECONDS = 0.05
@@ -2599,7 +2599,9 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
       and nil or require_number(item.pan, "pan", -1.0, 1.0)
     local muted = item.muted == nil
       and nil or require_boolean(item.muted, "muted")
-    if volume_db == nil and pan == nil and muted == nil then
+    local soloed = item.soloed == nil
+      and nil or require_boolean(item.soloed, "soloed")
+    if volume_db == nil and pan == nil and muted == nil and soloed == nil then
       error("el ajuste " .. position .. " no contiene cambios")
     end
 
@@ -2620,6 +2622,7 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
       volume_db = volume_db,
       pan = pan,
       muted = muted,
+      soloed = soloed,
     }
   end
 
@@ -2643,6 +2646,12 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
           error("REAPER rechazó el mute de " .. target.guid)
         end
       end
+      if target.soloed ~= nil then
+        if not reaper.SetMediaTrackInfo_Value(
+          target.track, "I_SOLO", target.soloed and 2 or 0) then
+          error("REAPER rechazó el solo de " .. target.guid)
+        end
+      end
 
       local state = read_track(target.track, target.index)
       if target.volume_db ~= nil and math.abs(state.volume_db - target.volume_db) > 0.00001 then
@@ -2653,6 +2662,9 @@ function ACTIONS.apply_track_mix_batch(params, request_id)
       end
       if target.muted ~= nil and state.muted ~= target.muted then
         error("la lectura posterior del mute no coincide en " .. target.guid)
+      end
+      if target.soloed ~= nil and (state.solo ~= 0) ~= target.soloed then
+        error("la lectura posterior del solo no coincide en " .. target.guid)
       end
       states[#states + 1] = state
     end
@@ -2719,6 +2731,64 @@ function ACTIONS.add_stock_fx(params, request_id)
       transaction_request_id = request_id,
     }
   end)
+  return result, observations(true)
+end
+
+function ACTIONS.apply_reatune_preset(params, request_id)
+  local project, _, ref = require_project(params)
+  local track, index = find_track_by_guid(project, params.track_guid)
+  local mode = require_string(params.mode, "mode", 32)
+  local preset_name = require_string(params.preset_name, "preset_name", 128)
+  if mode ~= "create_new" and mode ~= "reuse_existing" then
+    error("modo de vinculación ReaTune no permitido")
+  end
+  local requested_guid = nil
+  if mode == "reuse_existing" then
+    requested_guid = require_string(params.fx_guid, "fx_guid", 64)
+    require_reatune(track, find_fx_by_guid(track, requested_guid))
+  else
+    if params.fx_guid ~= nil then error("create_new no admite fx_guid") end
+    if count_fx_by_name_fragment(track, "reatune") > 0 then
+      error("la pista ya contiene ReaTune; debe reutilizar su GUID")
+    end
+  end
+  local before_count = reaper.TrackFX_GetCount(track)
+  local result = run_transaction(
+    project, request_id, "aplicar ReaTune y preset verificado", function()
+      local fx_index
+      if mode == "reuse_existing" then
+        fx_index = find_fx_by_guid(track, requested_guid)
+      else
+        fx_index = reaper.TrackFX_AddByName(track, "ReaTune (Cockos)", false, -1)
+        if fx_index < 0 then error("REAPER no pudo agregar ReaTune") end
+      end
+      local fx_before = require_reatune(track, fx_index)
+      if not reaper.TrackFX_SetPreset(track, fx_index, preset_name) then
+        error("REAPER no encontró el preset ReaTune solicitado")
+      end
+      local preset_ok, observed_name = reaper.TrackFX_GetPreset(track, fx_index, "")
+      if not preset_ok or observed_name ~= preset_name then
+        error("la lectura posterior no confirmó el preset ReaTune solicitado")
+      end
+      local fx_guid = fx_before.guid
+      local observed_fx = require_reatune(track, find_fx_by_guid(track, fx_guid))
+      if not observed_fx.preset_available or observed_fx.preset_name ~= preset_name then
+        error("el estado final de ReaTune no conserva el preset solicitado")
+      end
+      local expected_count = before_count + (mode == "create_new" and 1 or 0)
+      local track_state = read_track(track, index)
+      if track_state.fx_count ~= expected_count then
+        error("la cantidad final de FX no coincide")
+      end
+      return {
+        project_ref = ref,
+        track = track_state,
+        fx = observed_fx,
+        preset_name = observed_name,
+        transaction_request_id = request_id,
+      }
+    end
+  )
   return result, observations(true)
 end
 
