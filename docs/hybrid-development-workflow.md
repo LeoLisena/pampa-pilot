@@ -124,6 +124,32 @@ $env:LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
 .\scripts\start-local-codex.ps1
 ```
 
+### Uso diario: un solo comando
+
+Después de la instalación inicial, el punto de entrada habitual es:
+
+```powershell
+.\scripts\local-development.ps1
+```
+
+El asistente muestra los modelos cargados en LM Studio y los worktrees
+`local-llm/*`. Permite crear una tarea aislada con su objetivo o continuar la
+última conversación de una tarea existente. Si es necesario prepara Python
+automáticamente. El token sólo se mantiene durante la sesión.
+
+También puede iniciarse sin menú:
+
+```powershell
+.\scripts\local-development.ps1 `
+    -Task "nombre-tarea" `
+    -Objective "Resultado concreto y verificable" `
+    -Model "autor/modelo"
+```
+
+Para descartar el historial conversacional y abrir una charla nueva sobre el
+mismo worktree, agregue `-NewSession`. El código y el historial local no dependen
+de la disponibilidad de Codex cloud.
+
 Con LM Studio en la PC de la RTX 3090:
 
 ```powershell

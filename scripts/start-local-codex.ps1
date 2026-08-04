@@ -8,6 +8,7 @@ param(
     [switch]$NoAuthentication,
     [switch]$NonInteractive,
     [switch]$DiagnosticFullAccess,
+    [switch]$ResumeLast,
     [string]$Prompt
 )
 
@@ -138,6 +139,7 @@ $arguments = @(
     "--config", "web_search=`"disabled`""
 )
 if ($NonInteractive) {
+    if ($ResumeLast) { throw "-ResumeLast sólo está disponible en modo interactivo." }
     if ([string]::IsNullOrWhiteSpace($Prompt)) { throw "-NonInteractive requiere -Prompt." }
     $arguments += @("exec", "--ephemeral")
     if ($DiagnosticFullAccess) {
@@ -151,7 +153,13 @@ if ($NonInteractive) {
 else {
     if ($DiagnosticFullAccess) { throw "-DiagnosticFullAccess exige -NonInteractive." }
     $arguments += @("--sandbox", "workspace-write", "--ask-for-approval", "on-request")
-    if (-not [string]::IsNullOrWhiteSpace($Prompt)) { $arguments += $Prompt }
+    if ($ResumeLast) {
+        $arguments += @("resume", "--last")
+        if (-not [string]::IsNullOrWhiteSpace($Prompt)) { $arguments += $Prompt }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($Prompt)) {
+        $arguments += $Prompt
+    }
 }
 
 Write-Host "Iniciando Codex local en: $WorkingDirectory"

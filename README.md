@@ -323,3 +323,9 @@ Para comparar un modelo local cargado en LM Studio sin modificar el proyecto:
 ```powershell
 .\scripts\test-local-codex-model.ps1 -Model "autor/modelo" -Mode smoke
 ```
+
+Para iniciar o continuar el desarrollo cotidiano con un modelo local:
+
+```powershell
+.\scripts\local-development.ps1
+```
