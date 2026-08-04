@@ -16,6 +16,12 @@ El modelo local recomendado para el piloto es el Qwen 35B ya disponible. Un
 modelo rápido puede encargarse de documentación o cambios mecánicos, pero no debe
 recibir más permisos por ser más veloz.
 
+Codex agrega instrucciones y definiciones de herramientas al contexto. Cargue
+los modelos de desarrollo en LM Studio con **16K como mínimo y 32K recomendado**.
+Una ventana de 4096 tokens no alcanza: la solicitud puede fallar antes de que el
+modelo lea la tarea. Esta configuración es independiente de la longitud visible
+del mensaje del usuario.
+
 ## Responsabilidades
 
 ### Modelo local
