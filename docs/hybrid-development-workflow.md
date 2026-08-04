@@ -12,15 +12,33 @@ La primera opción es Codex CLI conectado a LM Studio mediante su endpoint
 compatible con Responses API. Cline y OpenCode quedan como clientes alternativos:
 las reglas durables viven en `AGENTS.md` y no dependen de ninguno de ellos.
 
-El modelo local recomendado para el piloto es el Qwen 35B ya disponible. Un
-modelo rápido puede encargarse de documentación o cambios mecánicos, pero no debe
-recibir más permisos por ser más veloz.
+El modelo local recomendado para desarrollo es Qwen 3.6 35B A3B. Qwen 3 4B puede
+encargarse de clasificación, formato o cambios mecánicos mínimos, pero no debe
+usarse como programador autónomo ni recibir más permisos por ser más veloz.
 
 Codex agrega instrucciones y definiciones de herramientas al contexto. Cargue
 los modelos de desarrollo en LM Studio con **16K como mínimo y 32K recomendado**.
 Una ventana de 4096 tokens no alcanza: la solicitud puede fallar antes de que el
 modelo lea la tarea. Esta configuración es independiente de la longitud visible
 del mensaje del usuario.
+
+Para Codex, configure `Max Concurrent Predictions` en **1**: una tarea agentica
+usa las herramientas secuencialmente y cuatro slots multiplican memoria/KV sin
+beneficio. Como punto de partida para la RTX 3090:
+
+- Qwen 4B: 32K, GPU offload completo, concurrencia 1;
+- Qwen 35B A3B: 16K o 32K según VRAM disponible, concurrencia 1 y el mayor GPU
+  offload que permanezca estable.
+
+### Resultado del piloto local
+
+Codex CLI ejecutó herramientas reales con ambos modelos. Qwen 4B, aun con 32K y
+offload completo, falló una tarea mediana: no localizó correctamente un módulo,
+inventó perfiles prohibidos, omitió tests y declaró éxito. El worktree impidió
+que ese resultado afectara el proyecto. Qwen 35B comprendió mejor el código y
+produjo un borrador razonable, aunque no completó la tarea con concurrencia 4.
+Por eso el 35B sigue siendo el agente diario y el 4B queda limitado a trabajo
+trivial de resultado inequívoco.
 
 ## Responsabilidades
 
