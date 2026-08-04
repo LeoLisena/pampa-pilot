@@ -19,10 +19,18 @@ feedback; el agente corrige hasta cerrar la funcionalidad.
 
 - Trabajar normalmente en `local-llm/daily`; reservar worktrees aislados para
   experimentos, cambios riesgosos o tareas no relacionadas.
+- Antes de diseñar, construir un inventario de evidencia leyendo backlog,
+  interfaz FX, documentación específica, adaptador Python, bridge Lua, schemas y
+  tests existentes. Citar qué archivo prueba cada capacidad o limitación.
 - Comprender el flujo completo antes de modificar una frontera entre Python,
   web, protocolo del agente, MCP y bridge Lua.
+- No trasladar conocimiento general de un plugin al contrato de PampaPilot. Un
+  parámetro sólo existe para el agente si su nombre, dominio, escritura y
+  verificación están respaldados por código o evidencia versionada.
 - Reutilizar contratos, validadores, análisis y conocimiento existentes.
 - Agregar tests de regresión y casos negativos junto con la implementación.
+- Evitar tests autorreferenciales que sólo confirmen supuestos inventados por la
+  nueva implementación; contrastar siempre con contratos previos independientes.
 - No declarar éxito por haber creado archivos: integrar el cambio en todos los
   componentes que realmente lo consumen.
 

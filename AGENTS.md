@@ -21,6 +21,30 @@ Read `docs/architecture.md` and `docs/agent-protocol.md` before changing a
 cross-component flow. Read the closest feature document before modifying a
 producer or REAPER capability.
 
+## Evidence gate before implementation
+
+Do not infer repository capabilities from general domain knowledge or from what
+a plugin normally supports. Before implementing or extending any processor:
+
+1. Read `docs/implementation-backlog.md`, `docs/fx-interface.md`, the closest
+   feature/research document, the existing Python adapter, Lua bridge handler,
+   schemas, and relevant tests.
+2. Write a short evidence inventory in the task reasoning: what is already
+   executable, what is read-back verifiable, what is private/unavailable, and
+   which exact files establish each fact.
+3. Search for the real integration points and confirm that the proposed change
+   reaches every required consumer. A new isolated module is not "integrated."
+4. Treat every unsupported or undocumented parameter as unavailable. Never
+   invent parameter names, indices, units, mappings, presets, or verification.
+5. If authoritative sources conflict or evidence is missing, stop and report
+   the gap instead of filling it with an assumption.
+
+Tests must validate existing contracts and independent requirements; do not
+create a new implementation and tests that merely agree with each other's
+unproven assumptions. Never claim MCP, web, bridge, or REAPER integration unless
+the corresponding tracked integration point changed or was demonstrably already
+generic, and the relevant contract test proves that path.
+
 For every implementation task, follow the complete collaboration loop in
 `docs/end-to-end-development-loop.md`. Do not stop after writing code or passing
 unit tests when the feature also needs a web, bridge, REAPER, or listening check.
