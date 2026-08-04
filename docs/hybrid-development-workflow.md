@@ -180,3 +180,20 @@ Un cambio local puede proponerse para integración cuando su alcance sigue siend
 el solicitado, el diff es comprensible, las validaciones pasan y no toca un área
 de revisión obligatoria. El usuario decide si se integra; el agente nunca hace
 merge automático a `main`.
+
+## Comparar otros modelos sin Codex cloud
+
+Cargue cada candidato en LM Studio con al menos 16K de contexto y una sola
+predicción concurrente. Luego ejecute enteramente en local:
+
+```powershell
+.\scripts\test-local-codex-model.ps1 `
+    -Model "identificador/mostrado-por-lm-studio" `
+    -Mode smoke
+```
+
+`smoke` comprueba lectura del repositorio, terminal y un test real sin modificar
+archivos. `-Mode reasoning` compara comprensión arquitectónica. Duración, salida
+y código de retorno quedan en `.runtime/model-evaluations/`, fuera de Git. Si LM
+Studio queda en `PROCESSING PROMPT 0%`, cancele con Ctrl+C, expulse el modelo y
+revise contexto, memoria y concurrencia antes de reintentar.

@@ -317,3 +317,9 @@ siempre el Lua versionado del repositorio:
 ```powershell
 .\scripts\install-reaper-bridge.ps1
 ```
+
+Para comparar un modelo local cargado en LM Studio sin modificar el proyecto:
+
+```powershell
+.\scripts\test-local-codex-model.ps1 -Model "autor/modelo" -Mode smoke
+```
