@@ -200,8 +200,14 @@ alcance de la versión actual.
 ## Pruebas locales
 
 ```powershell
-.\.venv-pampapilot\Scripts\python.exe -m pytest -v
+.\scripts\validate.ps1
 ```
+
+El desarrollo asistido con Codex y un modelo local se prepara con
+`scripts/install-codex-cli.ps1` y se inicia con
+`scripts/start-local-codex.ps1`. El flujo seguro de branches, worktrees,
+revisión y operación remota está en
+[`docs/hybrid-development-workflow.md`](docs/hybrid-development-workflow.md).
 
 El servidor local se inicia por `stdio` con:
 
