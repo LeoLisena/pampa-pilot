@@ -47,24 +47,39 @@ def default_ipc_root() -> Path:
     configured = os.environ.get("PAMPAPILOT_IPC_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
-    workspace_config = (
+
+    config_candidates = [(
         Path(__file__).resolve().parents[2]
         / "reaper"
         / "bridge_config.local.json"
-    )
-    if workspace_config.is_file():
+    )]
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            config_candidates.append(
+                Path(appdata)
+                / "REAPER"
+                / "Scripts"
+                / "PampaPilot"
+                / "bridge_config.local.json"
+            )
+
+    for config_path in config_candidates:
+        if not config_path.is_file():
+            continue
         try:
-            decoded = json.loads(workspace_config.read_text(encoding="utf-8-sig"))
+            decoded = json.loads(config_path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(
-                f"no se pudo leer la configuración del Bridge: {workspace_config}"
+                f"no se pudo leer la configuración del Bridge: {config_path}"
             ) from exc
         ipc_root = decoded.get("ipc_root") if isinstance(decoded, dict) else None
         if not isinstance(ipc_root, str) or not ipc_root.strip():
             raise RuntimeError(
-                f"bridge_config.local.json no contiene ipc_root válido: {workspace_config}"
+                f"bridge_config.local.json no contiene ipc_root válido: {config_path}"
             )
         return Path(ipc_root).expanduser().resolve()
+
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if not appdata:
