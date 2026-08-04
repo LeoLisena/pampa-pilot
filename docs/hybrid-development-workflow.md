@@ -114,6 +114,11 @@ rama `local-llm/*`; simplemente necesita revisión de Codex antes de integrarse.
 
 ## Uso de Codex con LM Studio
 
+La dinámica completa de implementación, prueba local, validación manual con el
+usuario y feedback está definida en
+[`end-to-end-development-loop.md`](end-to-end-development-loop.md). Todos los
+agentes deben seguirla, tanto en `daily` como en una tarea aislada.
+
 Instalar la copia local verificada de Codex CLI:
 
 ```powershell

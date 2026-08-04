@@ -21,6 +21,10 @@ Read `docs/architecture.md` and `docs/agent-protocol.md` before changing a
 cross-component flow. Read the closest feature document before modifying a
 producer or REAPER capability.
 
+For every implementation task, follow the complete collaboration loop in
+`docs/end-to-end-development-loop.md`. Do not stop after writing code or passing
+unit tests when the feature also needs a web, bridge, REAPER, or listening check.
+
 ## Setup and validation
 
 Windows x64 is the primary development platform.
@@ -108,3 +112,9 @@ clearly connected to the objective do not require a pause.
 State the outcome first, then list changed files, validation performed, and any
 manual REAPER or listening test still required. Never claim a REAPER action or
 audio result was verified when only an offline test ran.
+
+Do not integrate automatically after implementation. Hand the user one concrete
+manual validation at a time, wait for their observed result, incorporate their
+feedback, and revalidate. A task remains active while relevant changes are
+pending: inspect `git status`, the current diff, and test results before asking
+what to do next. Never fall back to a generic greeting in the middle of a task.
