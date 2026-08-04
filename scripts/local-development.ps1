@@ -41,15 +41,19 @@ function Get-LocalTaskWorktrees {
     return @($entries)
 }
 
-$existingTasks = @(Get-LocalTaskWorktrees)
+$dailyPath = & (Join-Path $projectRoot "scripts\ensure-daily-worktree.ps1") -BaseBranch $BaseBranch
+$existingTasks = @(Get-LocalTaskWorktrees | Sort-Object @{ Expression = { if ($_.Task -eq "daily") { 0 } else { 1 } } }, Task)
 if ([string]::IsNullOrWhiteSpace($Task)) {
-    Write-Host "Tareas locales disponibles:"
+    Write-Host "Espacios de desarrollo disponibles:"
     for ($index = 0; $index -lt $existingTasks.Count; $index++) {
         Write-Host "  $($index + 1). $($existingTasks[$index].Task)"
     }
-    Write-Host "  N. Nueva tarea"
-    $selection = (Read-Host "Elegí una tarea").Trim()
-    if ($selection -match "^[Nn]$") {
+    Write-Host "  N. Nueva tarea aislada"
+    $selection = (Read-Host "Elegí una opción (Enter = daily)").Trim()
+    if ([string]::IsNullOrWhiteSpace($selection)) {
+        $Task = "daily"
+    }
+    elseif ($selection -match "^[Nn]$") {
         $Task = (Read-Host "Nombre breve (letras, números y guiones)").Trim()
     }
     elseif ($selection -match "^\d+$" -and [int]$selection -ge 1 -and [int]$selection -le $existingTasks.Count) {
@@ -125,8 +129,8 @@ $resumeLast = -not $isNewTask -and -not $NewSession
 $initialPrompt = if ($isNewTask) {
     "Leé AGENTS.md y .agent-task.md. Confirmá brevemente el objetivo y empezá a trabajar."
 }
-elseif ($NewSession) {
-    "Leé AGENTS.md y .agent-task.md si existe. Revisá el estado actual de la rama antes de continuar."
+elseif ($NewSession -or $Task -eq "daily") {
+    "Leé AGENTS.md y revisá el estado actual de la rama. Este es el espacio diario persistente: trabajá con fluidez sobre el pedido del usuario y preguntá sólo si falta una decisión material."
 }
 else { $null }
 

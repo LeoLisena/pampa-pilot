@@ -17,13 +17,17 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $codexExecutable = Join-Path $projectRoot ".tools\codex-cli\bin\codex.exe"
 $pythonExecutable = Join-Path $projectRoot ".venv-pampapilot\Scripts\python.exe"
 $proxyScript = Join-Path $projectRoot "scripts\lmstudio_codex_proxy.py"
-$localCodexHome = Join-Path $projectRoot ".runtime\codex-local-home"
+$localCodexHomeRoot = Join-Path $projectRoot ".runtime\codex-local-home"
 $apiKeyVariable = "LM_STUDIO_API_KEY"
 
 if ([string]::IsNullOrWhiteSpace($BaseUrl)) { $BaseUrl = "http://127.0.0.1:1234/v1" }
 $BaseUrl = $BaseUrl.TrimEnd("/")
 if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { $WorkingDirectory = $projectRoot }
 $WorkingDirectory = (Resolve-Path $WorkingDirectory).Path
+$workspaceBranch = ((& git -C $WorkingDirectory branch --show-current 2>$null) -join "").Trim()
+$workspaceIdentity = if ([string]::IsNullOrWhiteSpace($workspaceBranch)) { "detached" } else { $workspaceBranch }
+$workspaceIdentity = $workspaceIdentity -replace "[^a-zA-Z0-9._-]", "-"
+$localCodexHome = Join-Path $localCodexHomeRoot $workspaceIdentity
 
 if ($DiagnosticFullAccess) {
     $branch = (& git -C $WorkingDirectory branch --show-current 2>$null) -join ""
@@ -64,6 +68,16 @@ multi_agent = false
     $localConfig,
     [Text.UTF8Encoding]::new($false)
 )
+
+if ($ResumeLast) {
+    $sessionRoot = Join-Path $localCodexHome "sessions"
+    $hasSession = Test-Path -LiteralPath $sessionRoot -PathType Container -and
+        $null -ne (Get-ChildItem -LiteralPath $sessionRoot -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $hasSession) {
+        Write-Host "Este espacio todavía no tiene conversación; se iniciará una nueva."
+        $ResumeLast = $false
+    }
+}
 
 $headers = @{}
 if (-not $NoAuthentication) {

@@ -329,3 +329,7 @@ Para iniciar o continuar el desarrollo cotidiano con un modelo local:
 ```powershell
 .\scripts\local-development.ps1
 ```
+
+Enter abre el espacio persistente `local-llm/daily`; no hace falta crear una
+tarea ni un entorno nuevo para cada pedido cotidiano. Use `N` sólo para un
+cambio aislado o experimental.

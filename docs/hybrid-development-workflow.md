@@ -63,10 +63,13 @@ trivial de resultado inequívoco.
 ## Aislamiento Git
 
 1. `main` representa la versión estable.
-2. Cada tarea usa un worktree y una rama independientes.
-3. El modelo local trabaja en `local-llm/<tarea>`.
-4. Codex trabaja o revisa en `codex/<tarea>`.
-5. La rama se valida antes de integrarse; una implementación incorrecta se
+2. El trabajo cotidiano continúa en el worktree persistente `local-llm/daily`.
+   No es necesario nombrar cada pedido ni recrear su entorno Python.
+3. Las tareas riesgosas, experimentales o no relacionadas usan un worktree y
+   una rama independientes.
+4. El modelo local trabaja en `local-llm/<tarea>`.
+5. Codex trabaja o revisa en `codex/<tarea>`.
+6. La rama se valida antes de integrarse; una implementación incorrecta se
    descarta eliminando su worktree y rama, nunca restaurando destructivamente
    `main`.
 
@@ -132,10 +135,21 @@ Después de la instalación inicial, el punto de entrada habitual es:
 .\scripts\local-development.ps1
 ```
 
-El asistente muestra los modelos cargados en LM Studio y los worktrees
-`local-llm/*`. Permite crear una tarea aislada con su objetivo o continuar la
-última conversación de una tarea existente. Si es necesario prepara Python
-automáticamente. El token sólo se mantiene durante la sesión.
+Al presionar Enter se abre `daily`: conserva código, conversación y un único
+entorno Python entre pedidos, para trabajar de forma continua. La opción `N`
+crea una tarea aislada sólo cuando conviene separar un experimento o cambio
+riesgoso. Si es necesario prepara Python automáticamente. El token sólo se
+mantiene durante la sesión. El historial de conversación se separa por rama:
+`daily` no retoma accidentalmente una charla de un experimento aislado.
+
+Cuando una tarea aislada ya fue integrada, se puede limpiar con:
+
+```powershell
+.\scripts\cleanup-agent-worktree.ps1 -Task "nombre-breve"
+```
+
+La limpieza se niega a borrar worktrees con cambios locales o commits que no
+estén en `main`. `daily` también está protegido y no se elimina por accidente.
 
 También puede iniciarse sin menú:
 

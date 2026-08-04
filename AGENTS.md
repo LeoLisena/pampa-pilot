@@ -41,7 +41,8 @@ task complete. Report exactly what ran and any remaining warnings.
 
 ## Git workflow
 
-- Keep `main` stable. Development agents work on a dedicated branch/worktree.
+- Keep `main` stable. Routine local development uses the persistent
+  `local-llm/daily` worktree; risky or unrelated work uses a dedicated worktree.
 - Local-model branches use `local-llm/<task>`; supervising Codex branches use
   `codex/<task>`.
 - Never commit, push, merge, delete branches, or rewrite history unless the user
@@ -53,7 +54,9 @@ task complete. Report exactly what ran and any remaining warnings.
   proposed design, and make supporting refactors when they materially improve
   the requested result. Explain non-obvious choices in the completion report.
 
-Create isolated work with `scripts/new-agent-worktree.ps1`.
+Use `scripts/local-development.ps1` for normal daily work. Create isolated work
+with `scripts/new-agent-worktree.ps1` only when the task benefits from separate
+review or easy disposal.
 
 ## Safety boundaries
 
