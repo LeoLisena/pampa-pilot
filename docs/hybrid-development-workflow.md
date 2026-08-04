@@ -242,3 +242,8 @@ archivos. `-Mode reasoning` compara comprensión arquitectónica. Duración, sal
 y código de retorno quedan en `.runtime/model-evaluations/`, fuera de Git. Si LM
 Studio queda en `PROCESSING PROMPT 0%`, cancele con Ctrl+C, expulse el modelo y
 revise contexto, memoria y concurrencia antes de reintentar.
+
+Para medir el comportamiento real dentro de Cline —incluyendo velocidad y
+continuidad entre herramientas— use `scripts/cline-model-benchmark.ps1`. La guía
+y la rúbrica están en
+[`cline-model-benchmark.md`](cline-model-benchmark.md).
